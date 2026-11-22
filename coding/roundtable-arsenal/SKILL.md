@@ -28,7 +28,7 @@ operator/    Prompts used by the operator (planner.md)
 ```
 
 Domain packs (security, finance, intel, …) are NOT in this repo — they live in
-separate arsenals layered on via `spec.arsenals` (e.g. `dapperdivers/roundtable-arsenal`).
+separate arsenals layered on via `spec.arsenals` (e.g. `<you>/<your-skills>`).
 
 ## Skill Structure
 
