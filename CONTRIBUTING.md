@@ -86,7 +86,7 @@ description: Query the OpenCTI threat intelligence platform for STIX 2.1 data in
 
 Put runnable scripts here. They should be:
 - **Self-contained** — minimal external dependencies
-- **No jq** — OpenClaw/knight containers don't ship jq; use grep/sed/cut
+- **No jq** — Knight containers don't ship jq; use grep/sed/cut
 - **Executable** — `chmod +x` all scripts
 - **Documented** — include usage comments at the top
 
@@ -204,26 +204,37 @@ metadata:
 
 ## Git-Sync Delivery
 
-Each knight's pod has a git-sync sidecar that pulls from this repo. The knight's HelmRelease config specifies which tier directories to sync:
+Knights are configured through their **Knight CR**, not per-knight Helm values.
+The operator adds one git-sync sidecar per arsenal (syncing to `/arsenal/<name>`)
+and a skill-filter sidecar that links the categories in `spec.skills` into
+`/skills/<category>/<skill>`. This repo is what `spec.arsenal` resolves to by
+default (`arsenal: {}`); extra
+arsenals in `spec.arsenals` are merged after it, per skill (the last arsenal
+providing `<category>/<skill>` wins).
 
 ```yaml
-# Galahad (security) — gets shared + security
-gitSync:
-  repo: https://github.com/roundtable-k8s/arsenal
-  paths:
-    - shared
-    - security
+# Galahad (security) — shared + project from this repo, security from a personal repo
+spec:
+  skills: [shared, project, security]
+  arsenal:                       # same as `arsenal: {}` — these are the defaults
+    repo: https://github.com/roundtable-k8s/arsenal
+    ref: main
+    period: 300s
+  arsenals:
+    - name: my-skills            # synced to /arsenal/my-skills
+      repo: https://github.com/<you>/<your-skills>
+      ref: main
 
-# Herald (intel/comms) — gets shared + intel + comms
-gitSync:
-  repo: https://github.com/roundtable-k8s/arsenal
-  paths:
-    - shared
-    - intel
-    - comms
+# Gawain (framework) — platform tiers only
+spec:
+  skills: [shared, coding, operator]
+  arsenal: {}
 ```
 
-Skills land in `/workspace/skills/` where the knight-agent runtime discovers them automatically.
+Skills appear read-only under `/skills/<category>/<skill>/`, where the pi-knight
+runtime discovers them (links refresh every 60s). Reference bundled scripts by
+that path, e.g. `bash /skills/shared/web-search/scripts/search.sh`. Write output
+to the knight's workspace (`/data`), never into `/skills` or `/arsenal`.
 
 ## Validation
 
