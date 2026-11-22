@@ -17,10 +17,10 @@ Read your repo's codebase skill first: `coding/roundtable-operator`,
 
 | Repo | Verify before push |
 |---|---|
-| dapperdivers/pi-knight | `npm ci && npx tsc --noEmit && npm test && npm run build` |
+| roundtable-k8s/pi-knight | `npm ci && npx tsc --noEmit && npm test && npm run build` |
 | dapperdivers/roundtable-ui | `cd api && go build ./... && go vet ./... && go test ./...`; UI changes: `cd ui && npm install && npm run build` |
-| dapperdivers/roundtable | `go build ./... && go vet ./...`; run `make test` (envtest) — if the sandbox can't, say so in the PR body |
-| dapperdivers/roundtable-arsenal | skills are markdown: valid YAML frontmatter (`name`, `description`), check referenced paths/commands actually exist |
+| roundtable-k8s/roundtable | `go build ./... && go vet ./...`; run `make test` (envtest) — if the sandbox can't, say so in the PR body |
+| roundtable-k8s/arsenal | skills are markdown: valid YAML frontmatter (`name`, `description`), check referenced paths/commands actually exist |
 | dapperdivers/nats-bridge | check package.json/Makefile for the test command; at minimum build clean |
 | dapperdivers/dapper-cluster | **`kubernetes/apps/roundtable/**` paths ONLY** — never touch anything else. Update the matching `kustomization.yaml` for new files. |
 

@@ -31,7 +31,7 @@ jobs:
           errors = []
           # Search all tier directories
           skill_files = []
-          for tier in ["shared", "security", "intel", "comms"]:
+          for tier in ["shared", "project", "watch", "coding"]:
               skill_files.extend(glob.glob(f"{tier}/**/SKILL.md", recursive=True))
 
           if not skill_files:
@@ -102,7 +102,7 @@ jobs:
         run: |
           echo "Checking script files..."
           errors=0
-          for tier in shared security intel comms; do
+          for tier in shared project watch coding; do
             while IFS= read -r script; do
               if [[ ! -x "$script" ]]; then
                 echo "  ✗ Not executable: $script"

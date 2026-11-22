@@ -209,14 +209,14 @@ Each knight's pod has a git-sync sidecar that pulls from this repo. The knight's
 ```yaml
 # Galahad (security) — gets shared + security
 gitSync:
-  repo: https://github.com/dapperdivers/roundtable-arsenal
+  repo: https://github.com/roundtable-k8s/arsenal
   paths:
     - shared
     - security
 
 # Herald (intel/comms) — gets shared + intel + comms
 gitSync:
-  repo: https://github.com/dapperdivers/roundtable-arsenal
+  repo: https://github.com/roundtable-k8s/arsenal
   paths:
     - shared
     - intel

@@ -1,6 +1,6 @@
 ---
 name: pi-knight-runtime
-description: Work within the pi-knight runtime repo (TypeScript/Node). Use when modifying knight runtime, NATS messaging, tools, or the coding agent SDK in dapperdivers/pi-knight.
+description: Work within the pi-knight runtime repo (TypeScript/Node). Use when modifying knight runtime, NATS messaging, tools, or the coding agent SDK in roundtable-k8s/pi-knight.
 ---
 
 # pi-knight Runtime Codebase Guide

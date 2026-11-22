@@ -1,6 +1,6 @@
 ---
 name: roundtable-operator
-description: Work within the roundtable operator repo (Go, Kubebuilder). Use when modifying CRDs, controllers, Helm charts, or NATS integration in dapperdivers/roundtable.
+description: Work within the roundtable operator repo (Go, Kubebuilder). Use when modifying CRDs, controllers, Helm charts, or NATS integration in roundtable-k8s/roundtable.
 ---
 
 # roundtable-operator Codebase Guide

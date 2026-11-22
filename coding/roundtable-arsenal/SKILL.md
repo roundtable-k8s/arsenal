@@ -1,6 +1,6 @@
 ---
 name: roundtable-arsenal
-description: Work within the roundtable-arsenal repo. Use when creating, editing, or organizing knight skills in dapperdivers/roundtable-arsenal.
+description: Work within the roundtable-arsenal repo. Use when creating, editing, or organizing knight skills in roundtable-k8s/arsenal.
 ---
 
 # roundtable-arsenal Codebase Guide

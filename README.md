@@ -1,81 +1,44 @@
 # Round Table Arsenal
 
-Skills and resources for Knights of the Round Table — AI agents running on the [pi-knight](https://github.com/dapperdivers/pi-knight) runtime.
+Skills and resources for Knights of the Round Table — AI agents running on the [pi-knight](https://github.com/roundtable-k8s/pi-knight) runtime.
 
 All skills follow the open [Agent Skills](https://agentskills.io) standard.
 
 ## Structure
 
 ```
-roundtable-arsenal/
+arsenal/
 ├── shared/                    # Base capabilities (ALL knights)
-│   ├── knight-comms/          # Cross-knight collaboration (nats_request)
-│   ├── nats-comms/            # Out-of-band NATS messaging (nats_publish)
 │   ├── daily-reports/         # Daily briefing templates
+│   ├── evidence-verification/ # Source/evidence checking
+│   ├── open-items-ledger/     # Carry-forward ledger protocol
 │   ├── report-generator/      # Template-based report rendering
+│   ├── vault-indexer/         # Vault indexing helpers
+│   ├── web-browser/           # Headless browsing
 │   ├── web-search/            # SearXNG metasearch
 │   └── web-fetch/             # URL content extraction
 │
-├── security/                  # Galahad — Threat intel & security ops
-│   ├── opencti-intel/         # OpenCTI GraphQL queries
-│   ├── threat-briefing/       # Daily/weekly briefing generation
-│   ├── cve-deep-dive/         # CVE vulnerability analysis
-│   ├── shodan-recon/          # Shodan asset reconnaissance
-│   ├── rss-analyzer/          # Security RSS feed analysis
-│   ├── morning-security-brief/ # Short daily brief: exploited vulns, KEV, your-stack CVEs (kagent)
-│   └── daily-security-report/ # Security daily report
+├── project/                   # Chains & fleet coordination
+│   ├── chain-orchestration/   # Multi-knight chain execution
+│   ├── briefing-synthesis/    # Merge knight outputs into one briefing
+│   └── fleet-status/          # Fleet health summary
 │
-├── finance/                   # Percival — Tax prep & financial ops
-│   ├── paperless-ops/         # Paperless-ngx document management
-│   ├── tax-prep/              # Transaction categorization
-│   └── daily-finance-report/  # Finance daily report
+├── watch/                     # Night Watch — platform self-healing
+│   ├── telemetry-queries/     # Prometheus / Victoria Logs queries
+│   └── night-watch-triage/    # Fingerprint incidents, dispatch fix Missions
 │
-├── career/                    # Lancelot — Career & professional
-│   ├── interview-prep/        # Interview preparation
-│   ├── linkedin-ops/          # LinkedIn content management
-│   └── daily-career-report/   # Career daily report
+├── coding/                    # Working on the Round Table itself
+│   ├── roundtable-operator/   # Go / Kubebuilder operator
+│   ├── roundtable-ui/         # React + Go dashboard
+│   ├── roundtable-arsenal/    # This repo
+│   ├── pi-knight-runtime/     # TypeScript knight runtime
+│   └── night-watch-fix/       # Execute a Night Watch fix Mission
 │
-├── infra/                     # Tristan — Infrastructure & cluster ops
-│   ├── flux-ops/              # Flux GitOps management
-│   └── daily-ops-report/      # Infrastructure daily report
-│
-├── home/                      # Bedivere — Household & life admin
-│   ├── household-ops/         # Home management
-│   ├── garden-advisor/        # This-week garden advice from your notes + forecast (kagent)
-│   └── daily-home-report/     # Home daily report
-│
-├── research/                  # Kay — Deep research
-│   └── deep-research/         # Multi-source research
-│
-├── intel/                     # Kay — Intelligence feeds
-│   ├── daily-intel-digest/    # Intel daily digest
-│   ├── news-aggregator/       # Tech/security news feeds
-│   ├── solar-weather/         # NOAA space weather
-│   └── weather-fetch/         # Weather data
-│
-├── vault/                     # Patsy — Vault curation
-│   ├── vault-curator/         # Obsidian vault maintenance
-│   ├── obsidian-conventions/  # Reading/citing a vault via MCPVault; ready-to-paste edits (kagent)
-│   ├── zettel-extraction/     # Atomic notes with verbatim takes, as JSON (kagent)
-│   └── vault-linter/          # Metadata & frontmatter linting
-│
-└── comms/                     # Communications
-    ├── email-triage/          # Outlook email triage
-    └── notification-digest/   # Notification aggregation
+└── operator/                  # Prompts used by the operator (planner)
 ```
 
-## Knight Roster
-
-| Knight | Domain | Skills | Specialty |
-|--------|--------|--------|-----------|
-| 🛡️ Galahad | `security` | shared + security | Threat intel, CVEs, OpenCTI, Shodan |
-| 📋 Percival | `finance` | shared + finance | Tax prep, Paperless, budgets |
-| ⚔️ Lancelot | `career` | shared + career | Interviews, LinkedIn, company research |
-| 🏗️ Tristan | `infra` | shared + infra | Cluster health, Flux, deployments |
-| 🏠 Bedivere | `home` | shared + home | Home Assistant, family, calendar |
-| 📡 Kay | `research` + `intel` | shared + research + intel | Deep research, news, solar weather |
-| 🥥 Patsy | `vault` | shared + vault | Vault curation, metadata, cleanup |
-| ⚒️ Gawain | `framework` | shared | Pi-knight runtime improvement |
+Domain skill packs (security, finance, research, …) are not part of this repo;
+point a Knight's arsenal at your own skills repository for those.
 
 ## Architecture
 
