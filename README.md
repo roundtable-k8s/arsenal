@@ -21,7 +21,8 @@ arsenal/
 ├── project/                   # Chains & fleet coordination
 │   ├── chain-orchestration/   # Multi-knight chain execution
 │   ├── briefing-synthesis/    # Merge knight outputs into one briefing
-│   └── fleet-status/          # Fleet health summary
+│   ├── fleet-status/          # Fleet health summary
+│   └── github-pm/             # Roadmap/issue management for the operator repo
 │
 ├── watch/                     # Night Watch — platform self-healing
 │   ├── telemetry-queries/     # Prometheus / Victoria Logs queries
