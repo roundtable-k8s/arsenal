@@ -8,7 +8,7 @@ description: >
 
 This skill defines **HOW** every knight structures daily report output. Your domain-specific report skill defines **WHAT** to report — this defines the envelope.
 
-**This is mandatory.** All knights MUST use this format for daily briefings so Tim gets consistent, mergeable reports every morning.
+**This is mandatory.** All knights MUST use this format for daily briefings so the user gets consistent, mergeable reports every morning.
 
 ## Architecture
 
@@ -63,9 +63,9 @@ Every daily report MUST be a JSON object matching this schema. See [`assets/cont
 | `timestamp` | string | ✅ | ISO-8601 when the report was generated |
 | `summary` | string | ✅ | 2-3 sentence executive summary |
 | `sections` | array | ✅ | One or more report sections (see below) |
-| `highlights` | array | ✅ | 3-5 bullet points for Tim's morning briefing |
-| `follow_up_needed` | boolean | ✅ | Does Tim need to act on anything? |
-| `follow_up_questions` | array | ✅ | Questions Tim might want answered (empty array if none) |
+| `highlights` | array | ✅ | 3-5 bullet points for the morning briefing |
+| `follow_up_needed` | boolean | ✅ | Does the user need to act on anything? |
+| `follow_up_questions` | array | ✅ | Questions the user might want answered (empty array if none) |
 
 ### Section Object
 
@@ -88,7 +88,7 @@ any highlight-count guidance.
 
 ### Priority Guidelines
 
-- **high** — Requires Tim's attention today. Actionable items, active threats, significant changes.
+- **high** — Requires the user's attention today. Actionable items, active threats, significant changes.
 - **medium** — Worth knowing. Trends, updates, scheduled events.
 - **low** — Background context. Routine observations, no action needed.
 
@@ -100,7 +100,7 @@ any highlight-count guidance.
 
 ## Markdown Vault Template
 
-After generating the JSON, use [`assets/vault-template.md`](assets/vault-template.md) to render a markdown report for saving to Tim's Obsidian vault. Use `shared/report-generator` to render it.
+After generating the JSON, use [`assets/vault-template.md`](assets/vault-template.md) to render a markdown report for saving to the user's Obsidian vault. Use `shared/report-generator` to render it.
 
 ## Example: Security Knight Daily Report
 

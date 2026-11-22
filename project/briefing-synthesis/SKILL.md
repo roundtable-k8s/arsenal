@@ -1,7 +1,7 @@
 ---
 name: briefing-synthesis
 description: >
-  Synthesize domain knight summaries into a comprehensive Daily Briefing for Derek's Obsidian vault. Your output IS the briefing file — write the full document, not a summary of it.
+  Synthesize domain knight summaries into a comprehensive Daily Briefing for the user's Obsidian vault. Your output IS the briefing file — write the full document, not a summary of it.
 ---
 
 # Briefing Synthesis

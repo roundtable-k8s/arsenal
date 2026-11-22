@@ -46,8 +46,8 @@ If you cannot create a PR (permissions error, no push access), your result **MUS
 
 Run this immediately after cloning:
 ```bash
-git config user.email "derek.mackley@hotmail.com"
-git config user.name "Derek (via Round Table 🏰)"
+git config user.email "${GIT_AUTHOR_EMAIL:?set by the operator}"
+git config user.name "${GIT_AUTHOR_NAME:?set by the operator}"
 ```
 
 ## Branch Naming
