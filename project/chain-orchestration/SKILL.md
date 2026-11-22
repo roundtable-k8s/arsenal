@@ -27,7 +27,7 @@ Each knight's output feeds the next knight's input. Use when tasks build on each
 Mission: "Evaluate CVE-2024-XXXX impact"
 1. Galahad: "Analyze CVE details and affected components"
 2. Tristan: "Check if affected versions are in our cluster" (gets Galahad's output)
-3. Bedivere: "Draft remediation timeline and notify Derek" (gets both outputs)
+3. Bedivere: "Draft remediation timeline and notify the user" (gets both outputs)
 ```
 
 ### Fan-Out → Synthesize

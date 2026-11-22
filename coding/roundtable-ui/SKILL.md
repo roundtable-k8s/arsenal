@@ -1,6 +1,6 @@
 ---
 name: roundtable-ui
-description: Work within the roundtable-ui dashboard repo (React + Go API). Use when modifying the fleet dashboard, components, API endpoints, or WebSocket integration in dapperdivers/roundtable-ui.
+description: Work within the roundtable-ui dashboard repo (React + Go API). Use when modifying the fleet dashboard, components, API endpoints, or WebSocket integration in roundtable-k8s/roundtable-ui.
 ---
 
 # roundtable-ui Codebase Guide
@@ -14,7 +14,7 @@ description: Work within the roundtable-ui dashboard repo (React + Go API). Use 
 | Tests | Vitest + Testing Library (UI), Go test (API) |
 | Storybook | v8.6 for component development |
 | CI | npm build + go vet + Docker multi-stage build |
-| Image | `ghcr.io/dapperdivers/roundtable-ui:<sha>` |
+| Image | `ghcr.io/roundtable-k8s/roundtable-ui:<sha>` |
 
 ## Project Layout
 

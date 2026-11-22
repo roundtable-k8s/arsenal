@@ -14,7 +14,7 @@ description: Work within the pi-knight runtime repo (TypeScript/Node). Use when 
 | Framework | pi-agent-core + pi-ai + pi-coding-agent (pi.dev SDKs) |
 | NATS | `nats` npm v2.28+ (JetStream) |
 | CI | `npm ci && npm run build`, Docker build+push to GHCR |
-| Image | `ghcr.io/dapperdivers/pi-knight:<sha>` |
+| Image | `ghcr.io/roundtable-k8s/pi-knight:<sha>` |
 
 ## Project Layout
 

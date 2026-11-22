@@ -42,6 +42,6 @@ Ping all knights in sequence. A knight that times out (15s) is likely down or ov
 ## When to Use
 
 - Before dispatching a multi-knight chain
-- When Tim or Derek asks "how are the knights?"
+- When the user asks "how are the knights?"
 - As part of morning mission briefing prep
 - After deployments or operator changes

@@ -16,7 +16,7 @@ description: Work within the roundtable operator repo (Go, Kubebuilder). Use whe
 | Kinds | Knight, Chain, Mission, RoundTable |
 | NATS | `github.com/nats-io/nats.go` v1.49+ |
 | CI | `go vet`, `go test`, Docker build+push to GHCR |
-| Image | `ghcr.io/dapperdivers/roundtable:<sha>` |
+| Image | `ghcr.io/roundtable-k8s/roundtable:<sha>` |
 
 ## Project Layout
 

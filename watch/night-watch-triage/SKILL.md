@@ -80,11 +80,10 @@ Missions reach knights on any table (dispatch uses the knight's own subjects).
 | Target | Repo | Fixer | Tier |
 |---|---|---|---|
 | pi-knight runtime (task.failed, timeouts, entrypoint) | roundtable-k8s/pi-knight | rt-runtime | 2 |
-| dashboard API/UI | dapperdivers/roundtable-ui | rt-ui | 2 |
+| dashboard API/UI | roundtable-k8s/roundtable-ui | rt-ui | 2 |
 | skills/prompts | roundtable-k8s/arsenal | rt-arsenal | 1 |
 | operator (reconcile errors, CRD logic) | roundtable-k8s/roundtable | rt-operator | 3 |
-| nats-bridge | dapperdivers/nats-bridge | rt-runtime | 2 |
-| deployment config (env, resources, model names) | dapperdivers/dapper-cluster — `kubernetes/apps/roundtable/**` ONLY | rt-operator | 1 |
+| deployment config (env, resources, model names) | the deployment's GitOps repo — Round Table app paths ONLY (name the repo + path in the Mission) | rt-operator | 1 |
 
 An incident spanning multiple repos gets ONE Mission to **rt-lead** (the team
 architect) with all the evidence — rt-lead breaks it down for the team. That
