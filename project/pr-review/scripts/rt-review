@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# rt-review: post a PR review whose verdict line merge-guard accepts, then
+# (for ship_it) queue the PR. The verdict is an argument, never free text.
+#
+#   rt-review [--no-queue] <pr-url> <ship_it|needs_changes> <body-file>
+#
+#   --no-queue   post the review but don't queue (draft, hold, data deletion,
+#                secrets/auth, or anything else left for a human)
+#
+# The body file is your review in Markdown, without a verdict line: any line
+# starting with "Verdict:" is removed and exactly one is appended.
+# Exits as soon as the PR is queued; it never waits for CI or the merge queue.
+set -euo pipefail
+
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+queue=1
+if [ "${1:-}" = "--no-queue" ]; then queue=0; shift; fi
+[ $# -eq 3 ] || usage
+url="$1"; verdict="$2"; body_file="$3"
+
+case "$verdict" in
+  ship_it) line="Verdict: ship it" ;;
+  needs_changes) line="Verdict: needs changes"; queue=0 ;;
+  *) echo "rt-review: verdict must be ship_it or needs_changes, got '$verdict'" >&2; exit 2 ;;
+esac
+[[ "$url" =~ ^https://github\.com/[^/]+/[^/]+/pull/[0-9]+$ ]] \
+  || { echo "rt-review: expected a PR URL like https://github.com/OWNER/REPO/pull/N, got '$url'" >&2; exit 2; }
+[ -s "$body_file" ] || { echo "rt-review: body file '$body_file' is missing or empty" >&2; exit 2; }
+
+repo="$(sed -E 's#https://github.com/([^/]+/[^/]+)/pull/.*#\1#' <<<"$url")"
+num="${url##*/}"
+
+tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+{ grep -viE '^[[:space:]>*_#-]*verdict:' "$body_file" || true; printf '\n%s\n' "$line"; } > "$tmp"
+
+# Post once. If gh reports an error, check whether the review landed anyway
+# before retrying, so a flaky response doesn't produce a duplicate review.
+posted_since() {
+  gh api "repos/$repo/pulls/$num/reviews?per_page=100" \
+    --jq "[.[] | select(.submitted_at >= \"$1\") | .body | split(\"\n\") | map(select(length > 0)) | last] | any(. == \"$line\")"
+}
+start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+if ! gh pr review "$url" --comment --body-file "$tmp" >/dev/null; then
+  sleep 3
+  if [ "$(posted_since "$start")" != true ]; then
+    gh pr review "$url" --comment --body-file "$tmp" >/dev/null
+  fi
+fi
+[ "$(posted_since "$start")" = true ] \
+  || { echo "rt-review: the review is not on $url after posting; check it by hand" >&2; exit 1; }
+
+queued="no"
+if [ "$queue" = 1 ]; then
+  pr="$(gh pr view "$url" --json isDraft,labels,state)"
+  if [ "$(jq -r .state <<<"$pr")" != OPEN ]; then
+    queued="no (PR is $(jq -r .state <<<"$pr"))"
+  elif [ "$(jq -r .isDraft <<<"$pr")" = true ]; then
+    queued="no (draft)"
+  elif jq -e '[.labels[].name] | index("hold")' <<<"$pr" >/dev/null; then
+    queued="no (hold label)"
+  elif gh pr merge "$url" --auto >/dev/null 2>&1; then
+    queued="yes (merge queue)"
+  else
+    queued="no (gh pr merge --auto failed; leave it for a human)"
+  fi
+fi
+
+echo "rt-review: posted '$line' on $url; queued: $queued"
