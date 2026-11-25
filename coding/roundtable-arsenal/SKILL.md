@@ -1,6 +1,6 @@
 ---
 name: roundtable-arsenal
-description: Work within the Round Table platform arsenal repo (roundtable-k8s/arsenal). Use when creating, editing, or organizing knight skills in roundtable-k8s/arsenal, or reasoning about how arsenals are delivered to knights (spec.arsenal / spec.arsenals).
+description: Work within the Round Table platform arsenal repo (roundtable-k8s/arsenal). Use when creating, editing, or organizing knight skills in roundtable-k8s/arsenal, or reasoning about how arsenals are delivered to knights (spec.arsenals).
 ---
 
 # Arsenal (roundtable-k8s/arsenal) Codebase Guide
@@ -9,10 +9,10 @@ description: Work within the Round Table platform arsenal repo (roundtable-k8s/a
 
 | Aspect | Detail |
 |--------|--------|
-| Repo | `roundtable-k8s/arsenal` — the platform arsenal (`spec.arsenal: {}` resolves here) |
+| Repo | `roundtable-k8s/arsenal` — the platform arsenal (an empty `spec.arsenals` entry resolves here) |
 | Format | AgentSkills (SKILL.md + scripts/references/assets) |
 | CI | `.github/workflows/validate-skills.yaml` |
-| Git-synced | Operator syncs it to knight pods via `spec.arsenal`; extra arsenals via `spec.arsenals`, merged per skill |
+| Git-synced | Operator syncs it to knight pods via `spec.arsenals` (ordered list), merged per skill |
 
 ## Repository Layout
 
@@ -83,12 +83,11 @@ The `validate-skills.yaml` workflow checks:
 
 The operator delivers skills from one or more arsenals, configured on the Knight CR:
 
-- `spec.arsenal` (`repo`/`ref`/`period`/`image`) — primary arsenal; its fields default
-  to `https://github.com/roundtable-k8s/arsenal` @ `main`, every `300s`, so
-  `arsenal: {}` means this repo. If `spec.arsenal` is omitted, only `spec.arsenals` sync.
-- `spec.arsenals` — optional list of extra arsenals (same fields plus `name`),
-  merged after `spec.arsenal` in order. Each gets its own `git-sync-<name>` sidecar
-  syncing to `/arsenal/<name>` (`name` defaults to the repo basename).
+- `spec.arsenals` — the single ordered list of arsenals (`name`, `repo`, `ref`,
+  `periodSeconds` as an integer, `image`; or an `oci` source). An empty entry
+  (`{name: platform}`) defaults to `https://github.com/roundtable-k8s/arsenal` @ `main`,
+  so it means this repo. Extra arsenals follow it. Each entry gets its own
+  `git-sync-<name>` sidecar syncing to `/arsenal/<name>` (`name` defaults to the repo basename).
 - The skill-filter sidecar links `/skills/<category>/<skill>` for each category in
   `spec.skills`, merging **per skill**: the last arsenal that provides
   `<category>/<skill>` wins. Links refresh every 60s; removed skills are pruned.
@@ -97,8 +96,8 @@ The operator delivers skills from one or more arsenals, configured on the Knight
 ```yaml
 spec:
   skills: [shared, project, security]
-  arsenal: {}            # this repo
   arsenals:
+    - name: platform     # this repo
     - name: personal
       repo: https://github.com/<you>/<your-skills>
 ```

@@ -65,8 +65,7 @@ go build -o bin/manager cmd/main.go
 Key fields:
 - `spec.nats.subjects` (NOT `topics`)
 - `spec.workspace.size` (NOT `storageSize`)
-- `spec.arsenal` has `repo/ref/period/image` (NOT `skills`)
-- `spec.arsenals` is an optional list of extra arsenals (`name/repo/ref/period/image`), merged after `spec.arsenal` per skill (last provider of `<category>/<skill>` wins); one `git-sync-<name>` sidecar each → `/arsenal/<name>`
+- `spec.arsenals` is the single ordered list of arsenals (`name/repo/ref/periodSeconds/image`, or `oci`); `periodSeconds` is an integer. An empty entry defaults to the platform arsenal. Merged per skill in list order (last provider of `<category>/<skill>` wins); one `git-sync-<name>` sidecar each → `/arsenal/<name>`. The old singular `arsenal` field was removed
 - `spec.skills` is top-level (not under arsenal)
 
 ## NATS Integration

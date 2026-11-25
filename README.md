@@ -44,22 +44,22 @@ add your own skills repository as a Knight `spec.arsenals` entry for those (see
 
 ## Architecture
 
-Knights run on the **pi-knight** runtime (Pi SDK). The operator delivers skills
+Knights run on the **pi-knight** (Pi SDK) or **claude-knight** (Claude Code) runtime. The operator delivers skills
 from one or more **arsenals** (git repos of skills) and filters them per knight:
 
 ```
 git-sync / git-sync-<name> (one sidecar per arsenal) → /arsenal/<name>   (full repo, read-only)
 skill-filter sidecar → /skills/<category>/<skill> symlinks    (only categories in spec.skills)
-pi-knight → discovers skills from /skills via Pi SDK
+runtime (pi-knight / claude-knight) → discovers skills from /skills
 ```
 
-- **`spec.arsenal`** — the primary arsenal. Its fields default to
-  `https://github.com/roundtable-k8s/arsenal` (`ref: main`, `period: 300s`), so
-  `arsenal: {}` gives the platform arsenal. Leave `spec.arsenal` out entirely and
-  only the `spec.arsenals` entries are synced.
-- **`spec.arsenals`** — optional extra arsenals (`name`, `repo`, `ref`, `period`,
-  `image`), merged after `spec.arsenal` in list order. `name` sets the sync path
-  `/arsenal/<name>` and sidecar `git-sync-<name>`; it defaults to the repo basename.
+- **`spec.arsenals`** — the single ordered list of arsenals. Each entry has `name`,
+  `repo`, `ref`, `periodSeconds` (integer seconds, not `300s`) and `image`, or an
+  `oci` source instead of a git repo. An empty entry (`{name: platform}`) uses the
+  defaults: `https://github.com/roundtable-k8s/arsenal`, `ref: main`. `name` sets
+  the sync path `/arsenal/<name>` and sidecar `git-sync-<name>`; it defaults to the
+  repo basename. Extra arsenals go after the platform entry; the list order is the
+  merge order.
 - **Per-skill merge** — for every category in `spec.skills`, `/skills/<category>/<skill>`
   links to the **last** arsenal that provides `<category>/<skill>`, so later
   arsenals override individual skills without hiding the rest of the category.
@@ -77,8 +77,8 @@ metadata:
 spec:
   # …other Knight fields omitted
   skills: [shared, security]
-  arsenal: {}                  # roundtable-k8s/arsenal @ main (defaults)
   arsenals:
+    - name: platform           # empty entry = roundtable-k8s/arsenal @ main (defaults)
     - name: my-skills
       repo: https://github.com/<you>/<your-skills>
       ref: main

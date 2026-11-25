@@ -229,19 +229,14 @@ MODIFIED             PATH                              SIZE    TITLE
 - `bash` 4.0+
 
 ### Setup
+The skill arrives read-only at `/skills/shared/vault-indexer` through `spec.arsenals`;
+there is nothing to clone or install.
 ```bash
-# 1. Add skill to knight
-cd /data/skills
-git clone <skill-repo> vault-indexer
+# 1. Build initial index
+/skills/shared/vault-indexer/scripts/index-vault.sh
 
-# 2. Make scripts executable
-chmod +x vault-indexer/scripts/*.sh
-
-# 3. Build initial index
-./vault-indexer/scripts/index-vault.sh
-
-# 4. Test query
-./vault-indexer/scripts/query-vault.sh --tag security --days 7
+# 2. Test query
+/skills/shared/vault-indexer/scripts/query-vault.sh --tag security --days 7
 ```
 
 ## Query Examples
@@ -283,14 +278,14 @@ query-vault.sh --no-tags --no-links
 ### Daily Update (Automated)
 ```bash
 # In knight's daily routine (cron or manual)
-/data/skills/vault-indexer/scripts/index-vault.sh --incremental --quiet
+/skills/shared/vault-indexer/scripts/index-vault.sh --incremental --quiet
 ```
 
 ### Full Rebuild (Weekly or On-Demand)
 ```bash
 # Clear and rebuild entire index
 rm /data/vault-index.db
-/data/skills/vault-indexer/scripts/index-vault.sh --verbose
+/skills/shared/vault-indexer/scripts/index-vault.sh --verbose
 ```
 
 ### Ad-Hoc Queries
