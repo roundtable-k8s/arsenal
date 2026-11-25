@@ -383,7 +383,7 @@ for repo in "${repos[@]}"; do
     done_already fixcheck "$key" && continue
     v="$(verdict "$repo" "$num")" || { warn "could not read the verdict of $url"; continue; }
     ship_it "$v" || continue
-    # gh pr checks exits 8 while a check fails or is pending: judge by the output
+    # gh pr checks exits 1 when a required check failed and 8 while checks are pending: judge by the output
     checks="$(gh pr checks "$num" -R "$repo" --required --json name,bucket,link,completedAt 2>/dev/null)" || true
     jq -e 'type == "array"' <<<"${checks:-}" >/dev/null 2>&1 || continue   # no required checks, or unreadable: next check
     details=""
