@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# status: print one JSON snapshot of the factory for the orchestrator's check.
+#
+#   status [--config FILE] [--repo OWNER/NAME]... [--namespace NS] [--chain-prefix P]
+#          [--dead-letter-minutes N]
+#
+# --config reads config.example.json's format; --repo (repeatable), --namespace and
+# --chain-prefix override it. The output validates against status.schema.json.
+# A section that cannot be read is null in the output plus an entry in "errors";
+# the script still exits 0. Exit 2 is a usage or config error.
+#
+# What it reads (the knight has gh and read-only kubectl in its namespace, nothing else):
+# - GitHub, per repository: `gh pr list` (open PRs) and, per PR, the reviews
+#   (dismissed ones skipped) and PR comments; the newest "Verdict:" line across
+#   both, compared like merge-guard.yml does. `gh issue list` per label.
+# - Kubernetes, in the namespace: chains.ai.roundtable.io (status.phase,
+#   status.stepStatuses[].{name,phase,error,taskId,completedAt}), knights.ai.roundtable.io
+#   (status.phase, status.ready) and pods (status.phase, containerStatuses).
+# - Dead-lettered tasks: the operator keeps them in NATS (the roundtable-dead-letters
+#   KV bucket and the <tasksStream>_DLQ stream); no Kubernetes object exposes them
+#   and there is no Task resource. Every chain step that fails is dead-lettered, so
+#   "deadLettered" lists chain steps in phase Failed that completed in the last
+#   N minutes (default 60), from all chains in the namespace. Tasks sent outside
+#   a chain (e.g. by nats_request) are not visible here.
+set -uo pipefail
+
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+die() { echo "status: $*" >&2; exit 2; }
+
+config=""; repos=(); namespace=""; prefix=""; dl_minutes=60
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --config) [ $# -ge 2 ] || usage; config="$2"; shift 2 ;;
+    --repo) [ $# -ge 2 ] || usage; repos+=("$2"); shift 2 ;;
+    --namespace) [ $# -ge 2 ] || usage; namespace="$2"; shift 2 ;;
+    --chain-prefix) [ $# -ge 2 ] || usage; prefix="$2"; shift 2 ;;
+    --dead-letter-minutes) [ $# -ge 2 ] || usage; dl_minutes="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    *) usage ;;
+  esac
+done
+[[ "$dl_minutes" =~ ^[0-9]+$ ]] || die "--dead-letter-minutes must be a whole number"
+
+cfg='{}'
+if [ -n "$config" ]; then
+  [ -r "$config" ] || die "cannot read config '$config'"
+  cfg="$(jq -c 'if type == "object" then . else error("not an object") end' "$config" 2>/dev/null)" \
+    || die "config '$config' is not a JSON object"
+fi
+if [ ${#repos[@]} -eq 0 ]; then
+  mapfile -t repos < <(jq -r '.repositories // [] | .[]' <<<"$cfg")
+fi
+[ -n "$namespace" ] || namespace="$(jq -r '.namespace // ""' <<<"$cfg")"
+[ -n "$prefix" ] || prefix="$(jq -r '.chainPrefix // ""' <<<"$cfg")"
+labels="$(jq -c '{ready: "rt:ready", inProgress: "rt:in-progress", needsHuman: "needs-human", hold: "hold"} + (.labels // {})' <<<"$cfg")"
+for r in ${repos[@]+"${repos[@]}"}; do
+  [[ "$r" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "repository '$r' is not owner/name"
+done
+[ ${#repos[@]} -gt 0 ] || [ -n "$namespace" ] || die "no repositories and no namespace: pass --config, --repo or --namespace"
+
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+: > "$tmp/errors"; : > "$tmp/repos"
+
+# First non-blank line of a command's error output, token-like strings removed.
+reason() {
+  local r
+  r="$(sed -n '/[^[:space:]]/{p;q}' "$1" 2>/dev/null \
+       | sed -E 's/(gh[pousr]_|github_pat_)[A-Za-z0-9_]+/[redacted]/g; s/[A-Za-z0-9_+\/=-]{40,}/[redacted]/g; s/^[[:space:]]+//; s/[[:space:]]+$//' \
+       | cut -c1-300)"
+  printf '%s' "${r:-exited non-zero with no output}"
+}
+error() { jq -nc --arg s "$1" --arg m "$2" '{section: $s, message: $m}' >> "$tmp/errors"; }
+
+# Newest "Verdict:" line of a PR across non-dismissed reviews and PR comments, as
+# a JSON string, or null. Same normalisation as merge-guard.yml.
+verdict() { # repo number
+  local f="$tmp/verdict"
+  gh api --paginate "repos/$1/pulls/$2/reviews" \
+    --jq '.[] | select(.state != "DISMISSED") | [.submitted_at, .body] | @json' > "$f" 2>"$tmp/err" || return 1
+  gh api --paginate "repos/$1/issues/$2/comments" \
+    --jq '.[] | [.created_at, .body] | @json' >> "$f" 2>"$tmp/err" || return 1
+  jq -cs '[sort_by(.[0] // "") | .[] | (.[1] // "") | split("\n")[]
+           | gsub("\r"; "") | gsub("[*_`]"; "") | sub("^[\\s>#-]+"; "")
+           | select(test("^verdict:"; "i"))] | last' "$f"
+}
+
+# ---- GitHub ----
+for r in ${repos[@]+"${repos[@]}"}; do
+  prs=null
+  if gh pr list --repo "$r" --state open --limit 200 \
+       --json number,title,author,isDraft,mergeStateStatus,mergeable,labels,autoMergeRequest,headRefOid \
+       > "$tmp/prs" 2>"$tmp/err"; then
+    : > "$tmp/prlist"
+    while IFS= read -r pr; do
+      n="$(jq -r .number <<<"$pr")"
+      if ! v="$(verdict "$r" "$n")"; then
+        error "repositories[$r].pullRequests[$n].verdict" "$(reason "$tmp/err")"; v=null
+      fi
+      jq -c --argjson v "$v" --arg hold "$(jq -r .hold <<<"$labels")" '{
+          number, title, author: (.author.login // null), draft: (.isDraft // false),
+          mergeStateStatus: (.mergeStateStatus // null), mergeable: (.mergeable // null),
+          labels: [.labels[]?.name], autoMerge: (.autoMergeRequest != null),
+          headSha: (.headRefOid // null), held: ([.labels[]?.name] | index($hold) != null),
+          verdict: $v,
+          shipIt: ($v != null and ($v | test("^verdict:\\s*ship it([^[:alnum:]]|$)"; "i")))
+        }' <<<"$pr" >> "$tmp/prlist"
+    done < <(jq -c '.[]' "$tmp/prs")
+    prs="$(jq -cs 'sort_by(.number)' "$tmp/prlist")"
+  else
+    error "repositories[$r].pullRequests" "$(reason "$tmp/err")"
+  fi
+
+  issues='{}'
+  for key in ready inProgress needsHuman; do
+    label="$(jq -r --arg k "$key" '.[$k]' <<<"$labels")"
+    if gh issue list --repo "$r" --label "$label" --state open --limit 200 \
+         --json number,title,labels > "$tmp/issues" 2>"$tmp/err"; then
+      list="$(jq -c 'map({number, title, labels: [.labels[]?.name]}) | sort_by(.number)' "$tmp/issues")"
+    else
+      error "repositories[$r].issues.$key" "$(reason "$tmp/err")"; list=null
+    fi
+    issues="$(jq -c --arg k "$key" --argjson l "$list" '.[$k] = $l' <<<"$issues")"
+  done
+  jq -nc --arg r "$r" --argjson p "$prs" --argjson i "$issues" \
+    '{repository: $r, pullRequests: $p, issues: $i}' >> "$tmp/repos"
+done
+
+# ---- Kubernetes ----
+kubectl="${KUBECTL:-kubectl}"
+chains=null; knights=null; pods=null; dead=null
+get() { "$kubectl" -n "$namespace" get "$1" -o json > "$tmp/$2" 2>"$tmp/err"; }
+if [ -z "$namespace" ]; then
+  error cluster "no namespace configured"
+elif ! command -v "$kubectl" >/dev/null 2>&1; then
+  error cluster "kubectl not found"
+else
+  if get chains.ai.roundtable.io chains; then
+    chains="$(jq -c --arg p "$prefix" '
+      [.items[] | select(.metadata.name | startswith($p)) | {
+        name: .metadata.name, phase: (.status.phase // "Unknown"),
+        startedAt: (.status.startedAt // null), completedAt: (.status.completedAt // null),
+        failedSteps: [.status.stepStatuses[]? | select(.phase == "Failed")
+                      | {name, error: (.error // null), taskId: (.taskId // null)}]
+      }] | sort_by(.name) | reduce .[] as $c ({}; .[$c.phase] += [$c])' "$tmp/chains")"
+    dead="$(jq -c --argjson m "$dl_minutes" '(now - $m * 60 | todate) as $since | {
+        windowMinutes: $m, source: "chain-steps",
+        tasks: [.items[] | .metadata.name as $c | .status.stepStatuses[]?
+                | select(.phase == "Failed" and (.completedAt // "") >= $since)
+                | {chain: $c, step: .name, taskId: (.taskId // null),
+                   error: (.error // null), completedAt}] | sort_by(.completedAt)
+      }' "$tmp/chains")"
+  else
+    error cluster.chains "$(reason "$tmp/err")"
+    error cluster.deadLettered "read from chain step status; chains could not be read"
+  fi
+  if get knights.ai.roundtable.io knights; then
+    knights="$(jq -c '[.items[] | {name: .metadata.name, phase: (.status.phase // "Unknown"),
+        ready: (.status.ready // false)}] | sort_by(.name)
+      | reduce .[] as $k ({}; .[$k.phase] += [$k])' "$tmp/knights")"
+  else
+    error cluster.knights "$(reason "$tmp/err")"
+  fi
+  if get pods pods; then
+    pods="$(jq -c '[.items[] | select((.status.phase // "Unknown") as $p | $p != "Running" and $p != "Succeeded") | {
+        name: .metadata.name, phase: (.status.phase // "Unknown"), reason: (.status.reason // null),
+        containers: [.status.containerStatuses[]? | select(.ready | not) | {name,
+          reason: (.state.waiting.reason // .state.terminated.reason // null),
+          restarts: (.restartCount // 0)}]
+      }] | sort_by(.name)' "$tmp/pods")"
+  else
+    error cluster.podsNotRunning "$(reason "$tmp/err")"
+  fi
+fi
+
+jq -n \
+  --slurpfile repos "$tmp/repos" --slurpfile errors "$tmp/errors" \
+  --argjson labels "$labels" --arg ns "$namespace" --arg prefix "$prefix" \
+  --argjson chains "$chains" --argjson knights "$knights" --argjson pods "$pods" --argjson dead "$dead" \
+  '{
+    generatedAt: (now | todate),
+    config: {repositories: [$repos[].repository], labels: $labels,
+             namespace: (if $ns == "" then null else $ns end), chainPrefix: $prefix},
+    repositories: $repos,
+    cluster: {namespace: (if $ns == "" then null else $ns end), chains: $chains,
+              knights: $knights, podsNotRunning: $pods, deadLettered: $dead},
+    errors: $errors
+  }'

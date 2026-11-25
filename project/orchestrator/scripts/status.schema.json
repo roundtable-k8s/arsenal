@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/roundtable-k8s/arsenal/project/orchestrator/scripts/status.schema.json",
+  "title": "orchestrator status snapshot",
+  "description": "Output of project/orchestrator/scripts/status. A section that could not be read is null and has an entry in errors.",
+  "type": "object",
+  "required": ["generatedAt", "config", "repositories", "cluster", "errors"],
+  "additionalProperties": false,
+  "properties": {
+    "generatedAt": {"$ref": "#/$defs/timestamp"},
+    "config": {
+      "type": "object",
+      "required": ["repositories", "labels", "namespace", "chainPrefix"],
+      "additionalProperties": false,
+      "properties": {
+        "repositories": {"type": "array", "items": {"$ref": "#/$defs/repository"}},
+        "labels": {
+          "type": "object",
+          "required": ["ready", "inProgress", "needsHuman", "hold"],
+          "additionalProperties": false,
+          "properties": {
+            "ready": {"type": "string", "minLength": 1},
+            "inProgress": {"type": "string", "minLength": 1},
+            "needsHuman": {"type": "string", "minLength": 1},
+            "hold": {"type": "string", "minLength": 1}
+          }
+        },
+        "namespace": {"type": ["string", "null"]},
+        "chainPrefix": {"type": "string"}
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["repository", "pullRequests", "issues"],
+        "additionalProperties": false,
+        "properties": {
+          "repository": {"$ref": "#/$defs/repository"},
+          "pullRequests": {"type": ["array", "null"], "items": {"$ref": "#/$defs/pullRequest"}},
+          "issues": {
+            "type": "object",
+            "required": ["ready", "inProgress", "needsHuman"],
+            "additionalProperties": false,
+            "properties": {
+              "ready": {"$ref": "#/$defs/issueList"},
+              "inProgress": {"$ref": "#/$defs/issueList"},
+              "needsHuman": {"$ref": "#/$defs/issueList"}
+            }
+          }
+        }
+      }
+    },
+    "cluster": {
+      "type": "object",
+      "required": ["namespace", "chains", "knights", "podsNotRunning", "deadLettered"],
+      "additionalProperties": false,
+      "properties": {
+        "namespace": {"type": ["string", "null"]},
+        "chains": {
+          "description": "Chains whose name starts with chainPrefix, grouped by status.phase (Unknown when unset).",
+          "type": ["object", "null"],
+          "additionalProperties": {"type": "array", "items": {"$ref": "#/$defs/chain"}}
+        },
+        "knights": {
+          "description": "Knights grouped by status.phase (Unknown when unset).",
+          "type": ["object", "null"],
+          "additionalProperties": {"type": "array", "items": {"$ref": "#/$defs/knight"}}
+        },
+        "podsNotRunning": {"type": ["array", "null"], "items": {"$ref": "#/$defs/pod"}},
+        "deadLettered": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["windowMinutes", "source", "tasks"],
+              "additionalProperties": false,
+              "properties": {
+                "windowMinutes": {"type": "integer", "minimum": 0},
+                "source": {"enum": ["chain-steps"]},
+                "tasks": {"type": "array", "items": {"$ref": "#/$defs/deadLetteredTask"}}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["section", "message"],
+        "additionalProperties": false,
+        "properties": {
+          "section": {"type": "string", "minLength": 1},
+          "message": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "timestamp": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"},
+    "optionalTimestamp": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]},
+    "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+    "labels": {"type": "array", "items": {"type": "string"}},
+    "pullRequest": {
+      "type": "object",
+      "required": ["number", "title", "author", "draft", "mergeStateStatus", "mergeable", "labels", "autoMerge", "headSha", "held", "verdict", "shipIt"],
+      "additionalProperties": false,
+      "properties": {
+        "number": {"type": "integer", "minimum": 1},
+        "title": {"type": "string"},
+        "author": {"type": ["string", "null"]},
+        "draft": {"type": "boolean"},
+        "mergeStateStatus": {"type": ["string", "null"], "description": "GitHub mergeStateStatus, e.g. CLEAN, BLOCKED, BEHIND, DIRTY, UNSTABLE, UNKNOWN."},
+        "mergeable": {"type": ["string", "null"], "description": "GitHub mergeable: MERGEABLE, CONFLICTING or UNKNOWN."},
+        "labels": {"$ref": "#/$defs/labels"},
+        "autoMerge": {"type": "boolean"},
+        "headSha": {"type": ["string", "null"]},
+        "held": {"type": "boolean", "description": "Has the hold label."},
+        "verdict": {"type": ["string", "null"], "description": "Newest 'Verdict:' line across non-dismissed reviews and PR comments, markdown removed; null when none or unreadable (see errors)."},
+        "shipIt": {"type": "boolean", "description": "verdict is 'Verdict: ship it' as merge-guard reads it."}
+      }
+    },
+    "issueList": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "required": ["number", "title", "labels"],
+        "additionalProperties": false,
+        "properties": {
+          "number": {"type": "integer", "minimum": 1},
+          "title": {"type": "string"},
+          "labels": {"$ref": "#/$defs/labels"}
+        }
+      }
+    },
+    "chain": {
+      "type": "object",
+      "required": ["name", "phase", "startedAt", "completedAt", "failedSteps"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "phase": {"type": "string", "minLength": 1},
+        "startedAt": {"$ref": "#/$defs/optionalTimestamp"},
+        "completedAt": {"$ref": "#/$defs/optionalTimestamp"},
+        "failedSteps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "error", "taskId"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "error": {"type": ["string", "null"]},
+              "taskId": {"type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    },
+    "knight": {
+      "type": "object",
+      "required": ["name", "phase", "ready"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "phase": {"type": "string", "minLength": 1},
+        "ready": {"type": "boolean"}
+      }
+    },
+    "pod": {
+      "type": "object",
+      "required": ["name", "phase", "reason", "containers"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "phase": {"type": "string", "minLength": 1},
+        "reason": {"type": ["string", "null"]},
+        "containers": {
+          "description": "Containers that are not ready.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "reason", "restarts"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "reason": {"type": ["string", "null"]},
+              "restarts": {"type": "integer", "minimum": 0}
+            }
+          }
+        }
+      }
+    },
+    "deadLetteredTask": {
+      "type": "object",
+      "required": ["chain", "step", "taskId", "error", "completedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "chain": {"type": "string"},
+        "step": {"type": "string"},
+        "taskId": {"type": ["string", "null"]},
+        "error": {"type": ["string", "null"]},
+        "completedAt": {"$ref": "#/$defs/timestamp"}
+      }
+    }
+  }
+}
