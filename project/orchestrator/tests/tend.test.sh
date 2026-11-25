@@ -152,6 +152,19 @@ out="$("$tend" --config "$work/nok.json" --state "$ST" 2>&1)"; [ -z "$out" ]; ch
 reset; prs '[{"number":2,"mss":"DIRTY"}]'
 jq '.botAuthor = "^someone$"' "$cfg" > "$work/bot.json"
 out="$("$tend" --config "$work/bot.json" --state "$ST" 2>&1)"; grep -q dispatch-needed <<<"$out"; check "rebase: botAuthor regex from config" $?
+reset; prs '[{"number":2,"bot":true,"mss":"DIRTY"}]'
+jq '.rebase = "off"' "$cfg" > "$work/off.json"
+out="$("$tend" --config "$work/off.json" --state "$ST" 2>&1)"; [ $? -eq 0 ] && [ -z "$out" ]; check "rebase: off -> dirty bot PR gives no output" $?
+[ ! -e "$ST" ] || ! jq -e 'has("rebase")' "$ST" >/dev/null; check "rebase: off -> no rebase entry in state" $?
+reset; prs '[{"number":2,"bot":true,"mss":"DIRTY"},{"number":3,"mss":"CLEAN"}]'; reviews 3 'Verdict: ship it'
+out="$("$tend" --config "$work/off.json" --state "$ST" 2>&1)"; [ "$out" = "tend: queued o/r#3 (ship it, head abcdef1)" ]; check "rebase: off -> ship-it queueing unchanged, DIRTY still not queued" $?
+reset; prs '[{"number":2,"bot":true,"mss":"DIRTY"}]'
+jq '.rebase = "dispatch"' "$cfg" > "$work/dispatch.json"
+out="$("$tend" --config "$work/dispatch.json" --state "$ST" 2>&1)"; grep -q '^tend: dispatch-needed {"kind":"rebase"' <<<"$out"; check "rebase: explicit dispatch -> asks as before" $?
+jq '.rebase = "maybe"' "$cfg" > "$work/bad.json"
+out="$("$tend" --config "$work/bad.json" --state "$ST" 2>&1)"; rc=$?; [ $rc -eq 2 ] && grep -q "field 'rebase'" <<<"$out"; check "rebase: unknown value -> exit 2 naming the field" $?
+jq '.rebase = false' "$cfg" > "$work/bad2.json"
+out="$("$tend" --config "$work/bad2.json" --state "$ST" 2>&1)"; rc=$?; [ $rc -eq 2 ]; check "rebase: non-string value -> exit 2" $?
 
 # ---- requeue transient chain failures ----
 reset; chain pr-pipeline-r-5 Failed 2026-01-01T00:00:00Z "Task was delivered to a knight that stopped before finishing it"
