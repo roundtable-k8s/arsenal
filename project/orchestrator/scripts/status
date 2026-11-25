@@ -22,6 +22,9 @@
 #   "deadLettered" lists chain steps in phase Failed that completed in the last
 #   N minutes (default 60), from all chains in the namespace. Tasks sent outside
 #   a chain (e.g. by nats_request) are not visible here.
+# - roundtables.ai.roundtable.io status.prFeedback (the PR feedback watcher's state,
+#   pull requests of the configured repositories only) -> cluster.prFeedback, and
+#   Events with reason IssuePickupHeld from the last 15 minutes -> cluster.pickupHeld.
 set -uo pipefail
 
 usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
@@ -127,7 +130,7 @@ done
 
 # ---- Kubernetes ----
 kubectl="${KUBECTL:-kubectl}"
-chains=null; knights=null; pods=null; dead=null
+chains=null; knights=null; pods=null; dead=null; prfeedback=null; held=null
 get() { "$kubectl" -n "$namespace" get "$1" -o json > "$tmp/$2" 2>"$tmp/err"; }
 if [ -z "$namespace" ]; then
   error cluster "no namespace configured"
@@ -170,18 +173,43 @@ else
   else
     error cluster.podsNotRunning "$(reason "$tmp/err")"
   fi
+  if get roundtables.ai.roundtable.io roundtables; then
+    prfeedback="$(jq -c --argjson repos "$(printf '%s\n' ${repos[@]+"${repos[@]}"} | jq -R . | jq -cs 'map(select(. != ""))')" '
+      [.items[] | select(.status.prFeedback != null) | .status.prFeedback as $f | {
+        table: .metadata.name, activeRun: ($f.activeRun // null),
+        lastPollTime: ($f.lastPollTime // null),
+        pullRequests: [$f.pullRequests[]? | select(($repos | length) == 0 or (.repo as $r | $repos | index($r) != null))
+          | {repo, number, phase: (.phase // null), failureKind: (.failureKind // null),
+             headSha: (.failureHeadSHA // null), message: (.message // null), updatedAt: (.updatedAt // null)}]
+      }] | sort_by(.table)' "$tmp/roundtables")"
+  else
+    error cluster.prFeedback "$(reason "$tmp/err")"
+  fi
+  # The operator repeats the event on every poll while a hold lasts: keep the last 15 minutes.
+  if "$kubectl" -n "$namespace" get events --field-selector reason=IssuePickupHeld -o json > "$tmp/events" 2>"$tmp/err"; then
+    held="$(jq -c '(now - 900 | todate) as $since | [.items[]
+        | select(.reason == "IssuePickupHeld" and (.involvedObject.kind // "RoundTable") == "RoundTable")
+        | {table: (.involvedObject.name // null), message: (.message // ""), count: (.count // 1),
+           lastSeen: (.lastTimestamp // .eventTime // .metadata.creationTimestamp)}
+        | select(.lastSeen != null and .lastSeen >= $since)]
+      | sort_by(.lastSeen) | reverse' "$tmp/events")"
+  else
+    error cluster.pickupHeld "$(reason "$tmp/err")"
+  fi
 fi
 
 jq -n \
   --slurpfile repos "$tmp/repos" --slurpfile errors "$tmp/errors" \
   --argjson labels "$labels" --arg ns "$namespace" --arg prefix "$prefix" \
   --argjson chains "$chains" --argjson knights "$knights" --argjson pods "$pods" --argjson dead "$dead" \
+  --argjson prfeedback "$prfeedback" --argjson held "$held" \
   '{
     generatedAt: (now | todate),
     config: {repositories: [$repos[].repository], labels: $labels,
              namespace: (if $ns == "" then null else $ns end), chainPrefix: $prefix},
     repositories: $repos,
     cluster: {namespace: (if $ns == "" then null else $ns end), chains: $chains,
-              knights: $knights, podsNotRunning: $pods, deadLettered: $dead},
+              knights: $knights, podsNotRunning: $pods, deadLettered: $dead,
+              prFeedback: $prfeedback, pickupHeld: $held},
     errors: $errors
   }'

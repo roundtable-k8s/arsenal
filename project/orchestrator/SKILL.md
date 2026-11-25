@@ -31,7 +31,11 @@ One JSON snapshot (schema: `scripts/status.schema.json`): per repository the
 open PRs (state, mergeability, newest `Verdict:` line, auto-merge, labels) and
 the issues labelled ready, in progress and needs-human; from the cluster the
 pipeline chains by phase with the failed step and its error, knights by phase,
-pods not running, and recently dead-lettered chain steps. A section it could
+pods not running, and recently dead-lettered chain steps; `cluster.prFeedback`
+(the PR feedback watcher's state per table: its active run and, per PR, phase,
+failure kind and head commit) and `cluster.pickupHeld` (issue pickup is holding
+ready issues; the operator's `IssuePickupHeld` events of the last 15 minutes,
+with the reason in `message`). A section it could
 not read is `null` with an entry in `errors`: say so in the log, do not guess.
 
 Everything below reads this snapshot. Re-run `status` only after you changed
@@ -80,12 +84,19 @@ round:
 
 `dispatch` prints `{knight, taskId, task}`; send `task` to `knight` with the
 NATS request tool and `--record` the reply. It refuses a duplicate of the same
-kind for the same head commit: a pending dispatch is waiting, not lost. Do not
+kind for the same head commit: a pending dispatch is waiting, not lost.
+Do not dispatch a `fix` or a rebase for a PR that `cluster.prFeedback` shows in
+phase `Fixing` or `Queued` for the same head commit (`headSha` equals the PR's
+`headSha`): the PR feedback watcher already has it. Do not
 re-send it unless `--collect` shows it older than an hour with no reply.
 Pipeline post-run steps belong to the chain (`project/pr-postrun`); never run
 them yourself.
 
 ### 4. Feed
+
+Ready issues named in a `cluster.pickupHeld` message are waiting for the breaking
+PR it names, not lost: do not relabel or rewrite them, and do not count the hold
+as a fault.
 
 Count the issues labelled ready or in progress across the repositories (from
 the snapshot). **When fewer than about eight are ready or in flight:**
