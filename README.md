@@ -112,6 +112,18 @@ skill-name/
 2. **Activation** — Full SKILL.md instructions loaded when task matches
 3. **Execution** — `references/` and `assets/` loaded on-demand
 
+## Vault layout
+
+Skills that read or write vault files take their roots from these environment
+variables, falling back to the defaults (the `Knight.spec.vault.writablePaths`
+layout of the reference deployment):
+
+| Variable | Default | Used for |
+|---|---|---|
+| `RT_BRIEFINGS_DIR` | `/vault/Agents/Briefings` | Daily briefings and the open-items ledger |
+| `RT_REPORTS_DIR` | `/vault/Agents/Roundtable` | Knight reports |
+| `RT_NIGHTWATCH_DIR` | `/vault/Agents/NightWatch` | Night Watch ledger |
+
 ## License
 
 MIT

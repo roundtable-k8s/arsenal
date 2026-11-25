@@ -2,7 +2,7 @@
 name: open-items-ledger
 description: >
   Protocol for the per-domain open-items ledger at
-  /vault/Briefings/Ledger/<domain>.json. Replaces prose memory as the
+  $BRIEFINGS_DIR/Ledger/<domain>.json. Replaces prose memory as the
   carry-forward mechanism for tracked items: Day-N counters are computed from
   first_seen, items are re-verified before being carried, and resolutions are
   recorded machine-readably so they can never be silently lost.
@@ -10,10 +10,27 @@ description: >
 
 # Open-Items Ledger — Carry-Forward Protocol
 
-Your domain has a ledger file: `/vault/Briefings/Ledger/<domain>.json`.
+Your domain has a ledger file: `$BRIEFINGS_DIR/Ledger/<domain>.json`.
 It is the **single source of truth for tracked items** — not yesterday's
 report, not your memory, not your task prompt. Follow this protocol every
 time you produce a daily report or briefing summary.
+
+## Vault layout
+
+Paths in this skill are built from these roots (defined once, here). Each can be
+overridden by the environment variable when it is set:
+
+| Root | Default | Override |
+|---|---|---|
+| Briefings | `/vault/Agents/Briefings` | `RT_BRIEFINGS_DIR` |
+| Reports | `/vault/Agents/Roundtable` | `RT_REPORTS_DIR` |
+| Night Watch | `/vault/Agents/NightWatch` | `RT_NIGHTWATCH_DIR` |
+
+```bash
+BRIEFINGS_DIR="${RT_BRIEFINGS_DIR:-/vault/Agents/Briefings}"
+REPORTS_DIR="${RT_REPORTS_DIR:-/vault/Agents/Roundtable}"
+NIGHTWATCH_DIR="${RT_NIGHTWATCH_DIR:-/vault/Agents/NightWatch}"
+```
 
 ## The file
 
