@@ -17,6 +17,7 @@ export FIX="$work/fix" LOG="$work/log"
 #   run view ID ... --log-failed -> $FIX/log-ID.txt
 #   $FIX/net-run-view: every run view fails with a network error; $FIX/slow-run-view: it hangs
 #   $FIX/net-run-ID: the run view of that one run fails with a network error
+#   pr checks N -R o/r      -> $FIX/checks-o_r-N.json (default []); exits 8 with $FIX/checks-exit8
 #   pr merge / issue edit / issue comment / run rerun: logged; $FIX/fail-<a>-<b> fails it.
 cat > "$work/bin/gh" <<'STUB'
 #!/usr/bin/env bash
@@ -44,6 +45,7 @@ case "$1" in
         [ -e "$FIX/net-run-$3" ] && { echo "error downloading logs: dial tcp 140.82.112.6:443: i/o timeout" >&2; exit 1; }
         [ -e "$FIX/slow-run-view" ] && exec sleep 5
         cat "$FIX/log-$3.txt" ;;
+      "pr checks") [ -e "$FIX/checks-$repo-$3.json" ] && cat "$FIX/checks-$repo-$3.json" || echo '[]'; [ -e "$FIX/checks-exit8" ] && exit 8 ;;
       "pr merge"|"issue edit"|"issue comment"|"run rerun") : ;;
       *) echo "unexpected gh $*" >&2; exit 1 ;;
     esac ;;
@@ -299,6 +301,40 @@ jq -c '[{number: 7, url: "https://github.com/o/s/pull/7", isDraft: false, labels
 jq -nc '[{state: "COMMENTED", submitted_at: "2026-01-01T00:00:00Z", body: "Verdict: ship it"}]' > "$FIX/reviews-o_s-7.json"
 out="$("$tend" --config "$work/off2.json" --state "$ST" 2>&1)"; rc=$?
 [ $rc -eq 0 ] && [ "$out" = "tend: queued o/s#7 (ship it, head abcdef1)" ]; check "rebase: off -> a ship-it PR in a later repository is still queued" $?
+
+# ---- fix-check ----
+ago() { date -u -d "-$1 minutes" +%Y-%m-%dT%H:%M:%SZ; }
+checks() { # n minutes-ago bucket [run-id]
+  jq -nc --arg t "$(ago "$2")" --arg b "$3" --arg l "https://github.com/o/r/actions/runs/${4:-900}/job/1" \
+    '[{name: "helm-check", bucket: $b, link: $l, completedAt: $t}, {name: "lint", bucket: "pass", link: "https://github.com/o/r/actions/runs/901/job/2", completedAt: $t}]' \
+    > "$FIX/checks-o_r-$1.json"
+  touch "$FIX/checks-exit8"
+}
+faillog() { printf 'helm-check\tRun helm unittest\t2026-01-01T00:00:00.0000000Z %s\n' "$1" > "$FIX/log-${2:-900}.txt"; }
+reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 60 fail; faillog 'assertion error: expected 3 got 2'
+run; [ $rc -eq 0 ] && [ "$(lines)" = 1 ] && [[ "$out" == 'tend: dispatch-needed {"kind":"fix-check","knight":"coder-knight","taskId":"fix-check-r-1-abcdef1"'* ]]; check "fix-check: approved PR with a failed required check -> one dispatch-needed line" $?
+j="${out#tend: dispatch-needed }"; jq -e '.task | contains("https://github.com/o/r/pull/1") and contains("helm-check") and contains("Run helm unittest") and contains("same branch")' <<<"$j" >/dev/null; check "fix-check: task names PR, check, failed step, same branch" $?
+jq -e '.fixcheck["o/r#1@abcdef1234567"].knight == "coder-knight"' "$ST" >/dev/null; check "fix-check: recorded in state by head commit" $?
+again; [ -z "$out" ]; check "fix-check: second run on the same head does nothing" $?
+prs '[{"number":1,"bot":true,"auto":true,"sha":"fedcba9876543"}]'; again; [ "$(lines)" = 1 ] && grep -q '"taskId":"fix-check-r-1-fedcba9"' <<<"$out"; check "fix-check: a new head commit asks again" $?
+
+reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 5 fail; faillog 'assertion error: expected 3 got 2'
+run; [ -z "$out" ]; check "fix-check: failed less than the threshold ago -> nothing" $?
+jq '.fixCheckMinutes = 2' "$cfg" > "$work/fc.json"
+out="$("$tend" --config "$work/fc.json" --state "$ST" 2>&1)"; grep -q '"kind":"fix-check"' <<<"$out"; check "fix-check: fixCheckMinutes is configurable" $?
+
+reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 60 fail; faillog 'Could not resolve host: github.com'
+run; ! grep -q fix-check <<<"$out"; check "fix-check: infrastructure failure -> no fix-check line" $?
+reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 60 fail; faillog $'Could not resolve host: x\nhelm-check\tRun helm unittest\t2026-01-01T00:00:00.0000000Z --- FAIL: TestX'
+run; grep -q fix-check <<<"$out"; check "fix-check: a test failure is never infrastructure" $?
+reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 60 pass; faillog 'x'
+run; [ -z "$out" ]; check "fix-check: passing checks -> nothing" $?
+reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: needs changes'; checks 1 60 fail; faillog 'assertion error: expected 3 got 2'
+run; ! grep -q fix-check <<<"$out"; check "fix-check: not approved -> nothing" $?
+reset; prs '[{"number":1,"bot":true,"auto":true,"mss":"DIRTY"}]'; reviews 1 'Verdict: ship it'; checks 1 60 fail; faillog 'assertion error: expected 3 got 2'
+run; ! grep -q fix-check <<<"$out"; check "fix-check: conflicted PR -> rebase, not fix-check" $?
+reset; prs '[{"number":1,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 60 fail; faillog 'assertion error: expected 3 got 2'
+run; ! grep -q fix-check <<<"$out"; check "fix-check: human PR -> nothing" $?
 
 # ---- all at once ----
 reset; prs '[{"number":1},{"number":2,"bot":true,"mss":"DIRTY"}]'; reviews 1 'Verdict: ship it'

@@ -52,7 +52,11 @@ work already done: queue ship-it PRs, re-queue issues whose chain failed for a
 transient reason, queue issues whose dependencies closed
 (`$ORCHESTRATOR_STATE_DIR/deps.json`: `{"owner/repo#N": ["owner/repo#M", …]}`),
 re-run CI that failed on infrastructure (never on a test failure), and record
-rebase requests for conflicted bot PRs. A table with PR feedback enabled sets
+rebase requests for conflicted bot PRs, and fix requests (`kind: "fix-check"`)
+for approved, non-conflicted bot PRs whose required check has failed on a real
+failure for longer than `fixCheckMinutes` (default 20; the task names the PR,
+the failing check and its failed step and asks for the fix on the same branch;
+once per head commit). A table with PR feedback enabled sets
 `"rebase": "off"` in its config: the PR feedback watcher already rebases
 conflicted knight PRs, so tend must not ask again. Human PRs are not rebased by
 either.
