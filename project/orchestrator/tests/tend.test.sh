@@ -15,6 +15,7 @@ export FIX="$work/fix" LOG="$work/log"
 #   issue view N -R o/r     -> $FIX/issue-o_r-N.json
 #   run list -R o/r         -> $FIX/runs-o_r.json (default [])
 #   run view ID ... --log-failed -> $FIX/log-ID.txt
+#   $FIX/net-run-view: every run view fails with a network error; $FIX/slow-run-view: it hangs
 #   pr merge / issue edit / issue comment / run rerun: logged; $FIX/fail-<a>-<b> fails it.
 cat > "$work/bin/gh" <<'STUB'
 #!/usr/bin/env bash
@@ -37,7 +38,10 @@ case "$1" in
       "pr list") cat "$FIX/prs-$repo.json" ;;
       "issue view") cat "$FIX/issue-$repo-$3.json" ;;
       "run list") if [ -e "$FIX/runs-$repo.json" ]; then cat "$FIX/runs-$repo.json"; else echo '[]'; fi ;;
-      "run view") cat "$FIX/log-$3.txt" ;;
+      "run view")
+        [ -e "$FIX/net-run-view" ] && { echo "error downloading logs: dial tcp 140.82.112.6:443: i/o timeout" >&2; exit 1; }
+        [ -e "$FIX/slow-run-view" ] && exec sleep 5
+        cat "$FIX/log-$3.txt" ;;
       "pr merge"|"issue edit"|"issue comment"|"run rerun") : ;;
       *) echo "unexpected gh $*" >&2; exit 1 ;;
     esac ;;
@@ -247,6 +251,34 @@ run; [ $rc -eq 1 ] && grep -q "could not re-run" <<<"$out"; check "rerun: rerun 
 rm "$FIX/fail-run-rerun"; again; grep -q "re-ran" <<<"$out"; check "rerun: retried after a failure" $?
 reset; runs $id; logline "Could not resolve host: x"
 run --dry-run; [[ "$out" == "tend: (dry-run) re-ran"* ]] && [ ! -e "$ST" ]; check "rerun: dry-run" $?
+# one unreadable log among readable ones: the others are still classified and re-run
+reset; jq -nc '[201,202,203] | map({databaseId: ., workflowName: "CI", event: "pull_request", createdAt: "'"$(now)"'", headBranch: "b"})' > "$FIX/runs-o_r.json"
+id=201; logline "Could not resolve host: x"; id=203; logline "Could not resolve host: y"
+out="$("$tend" --config "$cfg" --state "$ST" 2>&1)"; rc=$?
+[ $rc -eq 1 ] && grep -qF "could not read the failed log of o/r run 202" <<<"$out" \
+  && grep -qF "re-ran failed jobs of o/r run 201" <<<"$out" && grep -qF "re-ran failed jobs of o/r run 203" <<<"$out"
+check "rerun: one unreadable log, the others still re-run, exit 1" $?
+[ "$(grep -c "run view" "$LOG")" -eq 3 ]; check "rerun: every log read once" $?
+
+# every read fails on the network: two attempts, one summary line, exit 1, no re-run
+reset; jq -nc '[range(1;11)] | map({databaseId: ., workflowName: "CI", event: "pull_request", createdAt: "'"$(now)"'", headBranch: "b"})' > "$FIX/runs-o_r.json"
+touch "$FIX/net-run-view"
+out="$("$tend" --config "$cfg" --state "$ST" 2>&1)"; rc=$?
+[ "$(grep -c "run view" "$LOG")" -eq 2 ]; check "rerun: unreachable logs: two attempts only" $?
+[ $rc -eq 1 ] && [ "$(grep -c "tend: error:" <<<"$out")" -eq 1 ] \
+  && grep -qF "failed-run logs are not reachable from here; skipped CI re-runs (10 runs not checked)" <<<"$out"
+check "rerun: unreachable logs: one summary line, exit 1" $?
+! logged "run rerun"; check "rerun: nothing re-run when logs are unreachable" $?
+rm "$FIX/net-run-view"; : > "$LOG"; again
+[ "$(grep -c "run view" "$LOG")" -eq 10 ] && [ "$(grep -c "could not read the failed log" <<<"$out")" -eq 10 ]
+check "rerun: nothing recorded, so the runs are read again next check" $?
+
+# a read that hits the time bound counts as a network failure
+reset; jq -nc '[range(1;11)] | map({databaseId: ., workflowName: "CI", event: "pull_request", createdAt: "'"$(now)"'", headBranch: "b"})' > "$FIX/runs-o_r.json"
+touch "$FIX/slow-run-view"
+out="$(TEND_LOG_TIMEOUT=1 "$tend" --config "$cfg" --state "$ST" 2>&1)"; rc=$?
+[ $rc -eq 1 ] && [ "$(grep -c "run view" "$LOG")" -eq 2 ] && grep -qF "skipped CI re-runs (10 runs not checked)" <<<"$out"
+check "rerun: two reads hitting the time bound stop the section" $?
 
 # ---- all at once ----
 reset; prs '[{"number":1},{"number":2,"bot":true,"mss":"DIRTY"}]'; reviews 1 'Verdict: ship it'
