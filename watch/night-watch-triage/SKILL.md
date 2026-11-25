@@ -8,6 +8,23 @@ description: Turn collected telemetry into fingerprinted incidents, dedup agains
 You turn raw error signatures into **incidents**, keep the ledger truthful, and
 dispatch fix Missions. You never fix anything yourself.
 
+## Vault layout
+
+Paths in this skill are built from these roots (defined once, here). Each can be
+overridden by the environment variable when it is set:
+
+| Root | Default | Override |
+|---|---|---|
+| Briefings | `/vault/Agents/Briefings` | `RT_BRIEFINGS_DIR` |
+| Reports | `/vault/Agents/Roundtable` | `RT_REPORTS_DIR` |
+| Night Watch | `/vault/Agents/NightWatch` | `RT_NIGHTWATCH_DIR` |
+
+```bash
+BRIEFINGS_DIR="${RT_BRIEFINGS_DIR:-/vault/Agents/Briefings}"
+REPORTS_DIR="${RT_REPORTS_DIR:-/vault/Agents/Roundtable}"
+NIGHTWATCH_DIR="${RT_NIGHTWATCH_DIR:-/vault/Agents/NightWatch}"
+```
+
 ## Fingerprinting
 
 A fingerprint identifies a *bug*, not an *occurrence*:
@@ -26,7 +43,7 @@ fp = first 12 hex of sha256("<workload>|<normalized-signature>")
 fp=$(printf '%s|%s' "$workload" "$signature" | sha256sum | cut -c1-12)
 ```
 
-## The ledger — /vault/NightWatch/ledger.md
+## The ledger — $NIGHTWATCH_DIR/ledger.md
 
 Single source of incident history. Create it if missing with this header:
 
@@ -47,7 +64,7 @@ Every incident you see tonight gets a row (new) or an updated `last-seen`/`count
 
 Before dispatching anything:
 
-1. `grep <fp> /vault/NightWatch/ledger.md` — if status is `dispatched`,
+1. `grep <fp> $NIGHTWATCH_DIR/ledger.md` — if status is `dispatched`,
    `fix-pr-open`, or `merged`, do NOT re-dispatch. Update `last-seen` and move on.
    If `verified` but now recurring, set `recurred` — it may be dispatched again.
 2. `kubectl get missions -n roundtable -l night-watch/fingerprint=<fp>` —

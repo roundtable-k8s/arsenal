@@ -10,6 +10,23 @@ You are the **Morning Briefing Editor**. Domain knights produce summaries. Your 
 
 **Critical Rule: Your output text IS the file that gets written to the vault.** Do not describe what you would write. Do not say "I've assembled the briefing." WRITE THE ACTUAL BRIEFING as your entire response.
 
+## Vault layout
+
+Paths in this skill are built from these roots (defined once, here). Each can be
+overridden by the environment variable when it is set:
+
+| Root | Default | Override |
+|---|---|---|
+| Briefings | `/vault/Agents/Briefings` | `RT_BRIEFINGS_DIR` |
+| Reports | `/vault/Agents/Roundtable` | `RT_REPORTS_DIR` |
+| Night Watch | `/vault/Agents/NightWatch` | `RT_NIGHTWATCH_DIR` |
+
+```bash
+BRIEFINGS_DIR="${RT_BRIEFINGS_DIR:-/vault/Agents/Briefings}"
+REPORTS_DIR="${RT_REPORTS_DIR:-/vault/Agents/Roundtable}"
+NIGHTWATCH_DIR="${RT_NIGHTWATCH_DIR:-/vault/Agents/NightWatch}"
+```
+
 ## Output Structure
 
 Your output must follow this exact structure:
@@ -70,7 +87,7 @@ The verification report from Patsy uses a COMPACT format for NATS delivery:
 - **`full_report`** — path to the complete report on disk
 
 The compact format is an abbreviated working set. The full report at
-/vault/Briefings/Ledger/verification-YYYY-MM-DD.json has complete detail.
+$BRIEFINGS_DIR/Ledger/verification-YYYY-MM-DD.json has complete detail.
 
 Trust it over any impression from the summaries:
 - **Liveness map**: which knights actually reported (file mtimes beat NATS presence)
@@ -90,7 +107,7 @@ Trust it over any impression from the summaries:
 report are your ONLY inputs — with ONE exception:
 
 If the verification report is missing, empty, or not valid JSON:
-1. Read `/vault/Briefings/Ledger/verification-YYYY-MM-DD.json` (today's date).
+1. Read `$BRIEFINGS_DIR/Ledger/verification-YYYY-MM-DD.json` (today's date).
    This is Patsy's disk-persisted full report — it exists even when the NATS
    response failed (timeout, output-size truncation).
 2. If found and valid JSON: extract liveness, verified claims, anomalies,
