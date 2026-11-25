@@ -106,6 +106,18 @@ EOF
  {"metadata":{"name":"rt-new"}}
 ]}
 EOF
+  jq -n --arg now "$(ago 60)" '{items: [
+    {metadata:{name:"table-a"}, status:{prFeedback:{activeRun:"run-1", lastPollTime:$now, pullRequests:[
+      {repo:"example-org/service",number:10,phase:"Fixing",failureKind:"conflict",failureHeadSHA:"aaa",message:"rebasing",updatedAt:$now},
+      {repo:"example-org/service",number:12,phase:"Watching"},
+      {repo:"other-org/elsewhere",number:3,phase:"Queued",failureKind:"ci",failureHeadSHA:"zzz"}]}}},
+    {metadata:{name:"table-b"}, status:{phase:"Ready"}}]}' > "$FIX/k8s/roundtables.ai.roundtable.io.json"
+  jq -n --arg recent "$(ago 120)" --arg newer "$(ago 30)" --arg old "$(ago 3600)" '{items: [
+    {reason:"IssuePickupHeld", involvedObject:{kind:"RoundTable",name:"table-a"}, count:7, lastTimestamp:$recent,
+     message:"example-org/service: 4 ready issue(s) held, open breaking PR(s): #618 (rt/610-trigger-cronjobs)"},
+    {reason:"IssuePickupHeld", involvedObject:{kind:"RoundTable",name:"table-c"}, lastTimestamp:$newer, message:"newer hold"},
+    {reason:"IssuePickupHeld", involvedObject:{kind:"RoundTable",name:"table-b"}, count:2, lastTimestamp:$old, message:"old hold"},
+    {reason:"Other", involvedObject:{kind:"RoundTable",name:"table-a"}, lastTimestamp:$newer, message:"unrelated"}]}' > "$FIX/k8s/events.json"
   cat > "$FIX/k8s/pods.json" <<'EOF'
 {"items":[
  {"metadata":{"name":"ok-pod"},"status":{"phase":"Running","containerStatuses":[{"name":"main","ready":true,"restartCount":0}]}},
@@ -176,12 +188,39 @@ check "dead-lettered: recent failed steps of all chains, old ones excluded" $?
 run "$status" --config "$skill/config.example.json" --dead-letter-minutes 180
 q '.cluster.deadLettered.windowMinutes == 180 and (.cluster.deadLettered.tasks | length) == 3'; check "--dead-letter-minutes widens the window" $?
 
+q '.cluster.prFeedback | length == 1 and .[0].table == "table-a" and .[0].activeRun == "run-1"
+     and (.[0].pullRequests | length) == 2
+     and .[0].pullRequests[0] == {repo:"example-org/service",number:10,phase:"Fixing",failureKind:"conflict",headSha:"aaa",message:"rebasing",updatedAt:.[0].lastPollTime}
+     and .[0].pullRequests[1].failureKind == null and .[0].pullRequests[1].headSha == null'
+check "prFeedback: table with status.prFeedback, other repositories dropped, table without it omitted" $?
+logged "kubectl -n roundtable get roundtables.ai.roundtable.io -o json"; check "kubectl reads roundtables" $?
+q '.cluster.pickupHeld | map(.table) == ["table-c","table-a"] and .[1].count == 7 and .[0].count == 1
+     and (.[1].message | startswith("example-org/service: 4 ready issue(s) held"))'
+check "pickupHeld: recent events newest first, old and other reasons dropped" $?
+logged "get events --field-selector reason=IssuePickupHeld"; check "kubectl reads IssuePickupHeld events" $?
+
+# ---- roundtables / events unreadable ----
+fixtures; touch "$FIX/k8s/forbid-roundtables.ai.roundtable.io"
+run "$status" --config "$skill/config.example.json"
+[ $rc -eq 0 ] && valid; check "roundtables forbidden: exits 0 and validates" $?
+q '.cluster.prFeedback == null and (.cluster.pickupHeld | length) == 2 and (.cluster.chains.Running | length) == 1
+   and (.errors | length) == 1 and .errors[0].section == "cluster.prFeedback" and (.errors[0].message | startswith("Error from server (Forbidden)"))'
+check "roundtables forbidden: prFeedback null with an error, other sections read" $?
+fixtures; touch "$FIX/k8s/forbid-events"
+run "$status" --config "$skill/config.example.json"
+[ $rc -eq 0 ] && valid; check "events forbidden: exits 0 and validates" $?
+q '.cluster.pickupHeld == null and (.cluster.prFeedback | length) == 1 and (.errors | length) == 1 and .errors[0].section == "cluster.pickupHeld"'
+check "events forbidden: pickupHeld null with an error, other sections read" $?
+fixtures; echo '{"items":[]}' > "$FIX/k8s/events.json"; echo '{"items":[]}' > "$FIX/k8s/roundtables.ai.roundtable.io.json"
+run "$status" --config "$skill/config.example.json"
+valid && q '.cluster.pickupHeld == [] and .cluster.prFeedback == [] and .errors == []'; check "no events and no roundtables: empty arrays" $?
+
 # ---- kubectl unavailable ----
 fixtures
 KUBECTL="$work/no-such-kubectl" run "$status" --config "$skill/config.example.json"
 [ $rc -eq 0 ]; check "kubectl unavailable: exits 0" $?
 valid; check "kubectl unavailable: output validates" $?
-q '.cluster | .chains == null and .knights == null and .podsNotRunning == null and .deadLettered == null'
+q '.cluster | .chains == null and .knights == null and .podsNotRunning == null and .deadLettered == null and .prFeedback == null and .pickupHeld == null'
 check "kubectl unavailable: cluster sections are null" $?
 q '.errors == [{section:"cluster",message:"kubectl not found"}]'; check "kubectl unavailable: one errors entry" $?
 q '[.repositories[0].pullRequests[].number] == [10,11,12]'; check "kubectl unavailable: GitHub sections still read" $?

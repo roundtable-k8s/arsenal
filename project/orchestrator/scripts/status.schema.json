@@ -53,7 +53,7 @@
     },
     "cluster": {
       "type": "object",
-      "required": ["namespace", "chains", "knights", "podsNotRunning", "deadLettered"],
+      "required": ["namespace", "chains", "knights", "podsNotRunning", "deadLettered", "prFeedback", "pickupHeld"],
       "additionalProperties": false,
       "properties": {
         "namespace": {"type": ["string", "null"]},
@@ -68,6 +68,16 @@
           "additionalProperties": {"type": "array", "items": {"$ref": "#/$defs/knight"}}
         },
         "podsNotRunning": {"type": ["array", "null"], "items": {"$ref": "#/$defs/pod"}},
+        "prFeedback": {
+          "description": "PR feedback watcher state, one entry per RoundTable with status.prFeedback; pull requests of the configured repositories only.",
+          "type": ["array", "null"],
+          "items": {"$ref": "#/$defs/prFeedback"}
+        },
+        "pickupHeld": {
+          "description": "IssuePickupHeld events seen in the last 15 minutes, newest first: issue pickup is holding ready issues.",
+          "type": ["array", "null"],
+          "items": {"$ref": "#/$defs/pickupHeld"}
+        },
         "deadLettered": {
           "anyOf": [
             {"type": "null"},
@@ -191,6 +201,44 @@
             }
           }
         }
+      }
+    },
+    "prFeedback": {
+      "type": "object",
+      "required": ["table", "activeRun", "lastPollTime", "pullRequests"],
+      "additionalProperties": false,
+      "properties": {
+        "table": {"type": "string", "minLength": 1},
+        "activeRun": {"description": "status.prFeedback.activeRun as the operator reports it; null when none."},
+        "lastPollTime": {"type": ["string", "null"]},
+        "pullRequests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["repo", "number", "phase", "failureKind", "headSha", "message", "updatedAt"],
+            "additionalProperties": false,
+            "properties": {
+              "repo": {"type": "string"},
+              "number": {"type": "integer", "minimum": 1},
+              "phase": {"type": ["string", "null"], "description": "e.g. Watching, Queued, Fixing; any string."},
+              "failureKind": {"type": ["string", "null"], "description": "e.g. ci, conflict, merge-queue."},
+              "headSha": {"type": ["string", "null"], "description": "status failureHeadSHA."},
+              "message": {"type": ["string", "null"]},
+              "updatedAt": {"type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    },
+    "pickupHeld": {
+      "type": "object",
+      "required": ["table", "message", "count", "lastSeen"],
+      "additionalProperties": false,
+      "properties": {
+        "table": {"type": ["string", "null"]},
+        "message": {"type": "string"},
+        "count": {"type": "integer", "minimum": 1},
+        "lastSeen": {"$ref": "#/$defs/timestamp"}
       }
     },
     "deadLetteredTask": {
