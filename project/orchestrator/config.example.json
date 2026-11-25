@@ -9,11 +9,12 @@
   "namespace": "roundtable",
   "chainPrefix": "pr-pipeline-",
   "rebase": "dispatch",
-  "leadKnight": "rt-review",
+  "leadKnight": "rt-lead",
   "knights": {
     "example-org/dashboard": "rt-ui",
     "*": "rt-operator"
   },
   "botAuthor": "^(dunce-bot|app/.*)$",
-  "ciMaxAgeHours": 24
+  "ciMaxAgeHours": 24,
+  "fixCheckMinutes": 20
 }
