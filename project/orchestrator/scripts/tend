@@ -19,6 +19,7 @@
 #            tend cannot reach another knight, so it records the request and
 #            prints `tend: dispatch-needed {"kind","knight","taskId","task"}`
 #            for the agent (or scripts/dispatch) to send. Once per head commit.
+#            Not done with `rebase: "off"` (see Config).
 #   requeue  Failed pipeline chain (name starts with chainPrefix, created by
 #            issue pickup) whose failed step error is transient (TRANSIENT_*
 #            below), issue still open and not already ready/in progress:
@@ -37,6 +38,11 @@
 #   namespace    Kubernetes namespace of the chains (default: kubectl's)
 #   chainPrefix  pipeline chain name prefix (default: pr-pipeline-)
 #   knights      {"owner/name": "<knight>", "*": "<knight>"}: who rebases
+#   rebase       "dispatch" (default) or "off". "off" is for a table whose PR
+#                feedback watcher already rebases conflicted knight PRs: tend
+#                then prints and records no rebase request. Queueing is
+#                unchanged, and a DIRTY PR is still never queued. Any other
+#                value is a usage error (exit 2).
 #   botAuthor    extra regex for bot PR author logins (gh's is_bot is used too)
 #   ciMaxAgeHours  only look at CI runs this recent (default: 24)
 #
@@ -107,6 +113,12 @@ jq -e 'type == "object"' "$config" >/dev/null 2>&1 \
   || { echo "tend: config file '$config' is not a JSON object" >&2; exit 2; }
 
 cfg() { jq -r "$1" "$config"; }
+rebase_json="$(jq -c 'if has("rebase") then .rebase else "dispatch" end' "$config")"
+case "$rebase_json" in
+  '"dispatch"'|'"off"') ;;
+  *) echo "tend: config field 'rebase' must be \"dispatch\" or \"off\", not $rebase_json" >&2; exit 2 ;;
+esac
+REBASE="$(jq -r . <<<"$rebase_json")"
 mapfile -t repos < <(cfg '(.repos // .repositories // [])[] | if type == "string" then . else (.repo // .name) end')
 [ ${#repos[@]} -gt 0 ] || { echo "tend: no repos in '$config'" >&2; exit 2; }
 L_READY="$(cfg '.labels.ready // "rt:ready"')"
@@ -175,7 +187,8 @@ for repo in "${repos[@]}"; do
       | select([.labels[].name] | index($hold) | not)
       | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
 
-  # rebase: conflicted bot PRs
+  # rebase: conflicted bot PRs (skipped when the PR feedback watcher owns them)
+  [ "$REBASE" = dispatch ] || continue
   knight="$(jq -r --arg r "$repo" '.knights[$r] // .knights["*"] // ""' "$config")"
   while IFS=$'\t' read -r num url sha; do
     [ -n "$num" ] || continue

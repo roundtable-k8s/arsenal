@@ -7,5 +7,6 @@
     "hold": "hold"
   },
   "namespace": "roundtable",
-  "chainPrefix": "pr-pipeline-"
+  "chainPrefix": "pr-pipeline-",
+  "rebase": "dispatch"
 }
