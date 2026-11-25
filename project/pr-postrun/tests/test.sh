@@ -11,9 +11,16 @@ export FIX="$work/fix" LOG="$work/log"
 # gh stub: reads fixtures from $FIX, logs every mutating call to $LOG.
 # pr view <url>  -> $FIX/pr-<num>.json      issue view <n> -> $FIX/issue-<n>.json[.<call#>]
 # $FIX/fail-<sub> (e.g. fail-merge) makes that subcommand exit 1.
+# pr merge prints $FIX/merge-out (if present) to its output, and exits 1 if fail-pr-merge exists.
 cat > "$work/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 sub="$1 $2"; shift 2
+if [ "$sub" = "pr merge" ]; then
+  echo "pr merge $*" >> "$LOG"
+  [ -e "$FIX/merge-out" ] && cat "$FIX/merge-out"
+  [ -e "$FIX/fail-pr-merge" ] && exit 1
+  exit 0
+fi
 [ -e "$FIX/fail-${sub// /-}" ] && exit 1
 case "$sub" in
   "pr view") n="${1##*/}"; cat "$FIX/pr-$n.json" || exit 1 ;;
@@ -115,6 +122,28 @@ run "${V[@]}" ship_it "$work/review.md" $U/1
 reset; issue 7 rt:in-progress; pr 1 OPEN false "" false '[{"body":"Verdict: ship it"}]'; touch "$FIX/fail-pr-merge"
 run "${V[@]}" ship_it "$work/review.md" $U/1
 [ $rc -eq 1 ] && grep -q "could not enable auto-merge" <<<"$(last)"; check "verify: auto-merge failure is a problem" $?
+
+reset; issue 7 rt:in-progress; pr 1 OPEN false "" false '[{"body":"Verdict: ship it"}]'; touch "$FIX/fail-pr-merge"
+printf '%s\n' "GraphQL: Pull request is not mergeable: base branch policy prohibits the merge;" "  see https://docs" > "$FIX/merge-out"
+run "${V[@]}" ship_it "$work/review.md" $U/1
+[ $rc -eq 1 ] && [[ "$(last)" == *"could not enable auto-merge (GraphQL: Pull request is not mergeable: base branch policy prohibits the merge,)"* ]]; check "verify: auto-merge failure includes first line of the reason" $?
+logged "could not enable auto-merge (GraphQL: Pull request is not mergeable" && logged "--add-label needs-human"; check "verify: reason is posted in the issue comment" $?
+
+reset; issue 7 rt:in-progress; pr 1 OPEN false "" false '[{"body":"Verdict: ship it"}]'; touch "$FIX/fail-pr-merge"
+tok="gh""p_$(printf 'Q%.0s' $(seq 1 36))"  # fake token, assembled so no literal token is in the source
+printf '%s\n' "failed: token $tok rejected" > "$FIX/merge-out"
+run "${V[@]}" ship_it "$work/review.md" $U/1
+[ $rc -eq 1 ] && ! grep -q "$tok" <<<"$(last)" && grep -q "failed: token \[redacted\] rejected" <<<"$(last)"; check "verify: token-like strings are redacted from the reason" $?
+
+reset; issue 7 rt:in-progress; pr 1 OPEN false "" false '[{"body":"Verdict: ship it"}]'; touch "$FIX/fail-pr-merge"
+printf '%s\n' "Pull request is already in the merge queue" > "$FIX/merge-out"
+run "${V[@]}" ship_it "$work/review.md" $U/1
+[ $rc -eq 0 ] && [[ "$(last)" == "rt-verify: ok $U/1 queued" ]] && ! logged "issue comment"; check "verify: already queued is success" $?
+
+reset; issue 7 rt:in-progress; pr 1 OPEN false "" false '[{"body":"Verdict: ship it"}]'; touch "$FIX/fail-pr-merge"
+printf '%s\n' "Pull request #1 is already merged" > "$FIX/merge-out"
+run "${V[@]}" ship_it "$work/review.md" $U/1
+[ $rc -eq 0 ] && [[ "$(last)" == "rt-verify: ok $U/1 merged" ]] && ! logged "issue comment"; check "verify: already merged is success" $?
 
 reset; issue 7 rt:in-progress
 run "${V[@]}" ship_it "$work/review.md"; [ $rc -eq 1 ] && grep -q "no PR URL" <<<"$(last)"; check "verify: no PR URL is a problem" $?
