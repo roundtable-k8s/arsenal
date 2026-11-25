@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# rt-handback: hand an issue back to a human after a failed PR pipeline run.
+#
+#   rt-handback [--in-progress-label L] [--needs-human-label L] <repo> <issue> <summary-file>
+#
+# Open and in progress: add needs-human, comment the summary, remove in-progress last.
+# Closed, or no longer in progress: do nothing.
+set -euo pipefail
+
+usage() { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+ip="rt:in-progress"; nh="needs-human"; args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --in-progress-label) [ $# -ge 2 ] || usage; ip="$2"; shift 2 ;;
+    --needs-human-label) [ $# -ge 2 ] || usage; nh="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+set -- ${args[@]+"${args[@]}"}
+[ $# -eq 3 ] || usage
+repo="$1"; issue="$2"; summary_file="$3"
+[[ "$repo" =~ ^[^/]+/[^/]+$ ]] || usage
+[[ "$issue" =~ ^[0-9]+$ ]] || usage
+[ -r "$summary_file" ] || { echo "rt-handback: summary file '$summary_file' is not readable" >&2; exit 2; }
+
+j="$(gh issue view "$issue" --repo "$repo" --json state,labels,comments)"
+if [ "$(jq -r .state <<<"$j")" != OPEN ] || ! jq -e --arg ip "$ip" '[.labels[].name] | index($ip)' <<<"$j" >/dev/null; then
+  echo "rt-handback: ok left-alone $repo#$issue"; exit 0
+fi
+
+body="PR pipeline run failed:"$'\n\n'"$(cat "$summary_file")"$'\n\n'"Add \`rt:ready\` again to re-run it."
+gh issue edit "$issue" --repo "$repo" --add-label "$nh" >/dev/null
+if ! jq -e --arg b "$body" '[.comments[].body] | index($b)' <<<"$j" >/dev/null; then
+  gh issue comment "$issue" --repo "$repo" --body "$body" >/dev/null
+fi
+gh issue edit "$issue" --repo "$repo" --remove-label "$ip" >/dev/null
+echo "rt-handback: ok labelled $repo#$issue"

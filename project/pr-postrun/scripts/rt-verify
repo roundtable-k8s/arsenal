@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# rt-verify: check that the PRs of an issue are merged or queued, else hand the issue back.
+#
+#   rt-verify [--in-progress-label L] [--needs-human-label L] <repo> <issue> <ship_it|needs_changes> <review-file> <pr-url>...
+#
+# Per PR: merged is ok; closed unmerged, draft, or needs-human/hold is a problem; open
+# gets <review-file> posted via rt-review when its newest verdict differs, then
+# auto-merge is enabled if not already on. Any problem: needs-human on the issue,
+# a comment, in-progress removed last, exit 1. The last output line is the result.
+set -euo pipefail
+
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+ip="rt:in-progress"; nh="needs-human"; args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --in-progress-label) [ $# -ge 2 ] || usage; ip="$2"; shift 2 ;;
+    --needs-human-label) [ $# -ge 2 ] || usage; nh="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+set -- ${args[@]+"${args[@]}"}
+[ $# -ge 4 ] || usage
+repo="$1"; issue="$2"; verdict="$3"; review_file="$4"; shift 4
+[[ "$repo" =~ ^[^/]+/[^/]+$ ]] || usage
+[[ "$issue" =~ ^[0-9]+$ ]] || usage
+case "$verdict" in ship_it|needs_changes) ;; *) usage ;; esac
+[ -s "$review_file" ] || { echo "rt-verify: review file '$review_file' is missing or empty" >&2; exit 2; }
+
+rt_review="${RT_REVIEW:-$(dirname "$0")/../../pr-review/scripts/rt-review}"
+want="ship it"; [ "$verdict" = needs_changes ] && want="needs changes"
+
+problems=(); ok=()
+add_problem() { problems+=("$1"); }
+
+for url in "$@"; do
+  if ! [[ "$url" =~ ^https://github\.com/[^/]+/[^/]+/pull/[0-9]+$ ]]; then
+    add_problem "$url: not a PR URL"; continue
+  fi
+  if ! pr="$(gh pr view "$url" --json state,isDraft,labels,autoMergeRequest,reviews 2>&1)"; then
+    add_problem "$url: cannot read PR ($pr)"; continue
+  fi
+  state="$(jq -r .state <<<"$pr")"
+  if [ "$state" = MERGED ]; then ok+=("$url merged"); continue; fi
+  if [ "$state" != OPEN ]; then add_problem "$url: closed without merging"; continue; fi
+  if [ "$(jq -r .isDraft <<<"$pr")" = true ]; then add_problem "$url: draft"; continue; fi
+  if jq -e --arg nh "$nh" '[.labels[].name] | (index($nh) or index("hold"))' <<<"$pr" >/dev/null; then
+    add_problem "$url: labelled $nh or hold"; continue
+  fi
+  # Newest "Verdict:" line across the PR's reviews, normalised to lower case.
+  newest="$(jq -r '[.reviews[]?.body // "" | split("\n") | map(select(test("^[[:space:]>*_#-]*[Vv]erdict:"))) | last // empty]
+                   | last // "" | ascii_downcase | gsub("[^a-z ]"; "") | sub("^ *verdict *"; "") | sub(" +$"; "")' <<<"$pr")"
+  if [ "$newest" != "$want" ]; then
+    if ! out="$("$rt_review" "$url" "$verdict" "$review_file" 2>&1)"; then
+      add_problem "$url: rt-review failed ($(tail -n 1 <<<"$out"))"; continue
+    fi
+    if [ "$verdict" != ship_it ]; then add_problem "$url: no ship-it verdict; not queued"; continue; fi
+    pr="$(gh pr view "$url" --json state,isDraft,labels,autoMergeRequest,reviews 2>/dev/null || echo "$pr")"
+    [ "$(jq -r .state <<<"$pr")" = MERGED ] && { ok+=("$url merged"); continue; }
+  elif [ "$verdict" != ship_it ]; then
+    add_problem "$url: no ship-it verdict; not queued"; continue
+  fi
+  if [ "$(jq -r '.autoMergeRequest != null' <<<"$pr")" = true ]; then ok+=("$url queued"); continue; fi
+  if gh pr merge "$url" --auto --squash >/dev/null 2>&1; then
+    ok+=("$url queued")
+  else
+    add_problem "$url: could not enable auto-merge"
+  fi
+done
+[ $# -gt 0 ] || add_problem "no PR URL"
+
+if [ ${#problems[@]} -eq 0 ]; then
+  echo "rt-verify: ok ${ok[*]}"
+  exit 0
+fi
+
+body="PR verification found problems:"
+for p in "${problems[@]}"; do body+=$'\n'"- $p"; done
+existing="$(gh issue view "$issue" --repo "$repo" --json comments | jq -c '[.comments[].body]' || echo '[]')"
+gh issue edit "$issue" --repo "$repo" --add-label "$nh" >/dev/null
+if ! jq -e --arg b "$body" 'index($b)' <<<"$existing" >/dev/null; then
+  gh issue comment "$issue" --repo "$repo" --body "$body" >/dev/null
+fi
+gh issue edit "$issue" --repo "$repo" --remove-label "$ip" >/dev/null
+summary="$(IFS=';'; echo "${problems[*]}")"
+echo "rt-verify: needs-human $summary"
+exit 1

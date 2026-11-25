@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# rt-close-parent: close a split parent issue once its sub-issues are done, else hand it back.
+#
+#   rt-close-parent [--in-progress-label L] [--needs-human-label L] [--wait-minutes N] <repo> <parent> <sub-issue>...
+#
+# Leaves the parent alone if it no longer carries the in-progress label. Polls until no
+# sub-issue is open without needs-human (default 50 minutes). All sub-issues completed:
+# closes the parent. Otherwise needs-human on the parent. In-progress is removed last.
+set -euo pipefail
+
+usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+ip="rt:in-progress"; nh="needs-human"; wait_min=50; args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --in-progress-label) [ $# -ge 2 ] || usage; ip="$2"; shift 2 ;;
+    --needs-human-label) [ $# -ge 2 ] || usage; nh="$2"; shift 2 ;;
+    --wait-minutes) [ $# -ge 2 ] || usage; wait_min="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+set -- ${args[@]+"${args[@]}"}
+[ $# -ge 3 ] || usage
+repo="$1"; parent="$2"; shift 2
+[[ "$repo" =~ ^[^/]+/[^/]+$ ]] || usage
+[[ "$parent" =~ ^[0-9]+$ ]] || usage
+[[ "$wait_min" =~ ^[0-9]+$ ]] || usage
+for s in "$@"; do [[ "$s" =~ ^[0-9]+$ ]] || usage; done
+poll="${RT_POLL_SECONDS:-180}"
+
+parent_active() {
+  local j; j="$(gh issue view "$parent" --repo "$repo" --json labels)" || exit 1
+  jq -r --arg ip "$ip" '[.labels[].name] | index($ip) != null' <<<"$j"
+}
+
+active="$(parent_active)" || exit 1
+if [ "$active" != true ]; then
+  echo "rt-close-parent: ok left-alone $parent"; exit 0
+fi
+
+# Classify each sub-issue: done | pending (open, not needs-human) | problem.
+scan() {
+  pending=0; problems=(); local s j
+  for s in "$@"; do
+    j="$(gh issue view "$s" --repo "$repo" --json state,stateReason,labels)"
+    if jq -e --arg nh "$nh" '[.labels[].name] | index($nh)' <<<"$j" >/dev/null; then
+      problems+=("#$s (labelled $nh)")
+    elif [ "$(jq -r .state <<<"$j")" = OPEN ]; then
+      pending=$((pending+1)); problems+=("#$s (still open)")
+    elif [ "$(jq -r '.stateReason // ""' <<<"$j" | tr a-z A-Z)" = COMPLETED ]; then :
+    else
+      problems+=("#$s (closed as not planned)")
+    fi
+  done
+}
+
+deadline=$(( $(date +%s) + wait_min * 60 ))
+while :; do
+  scan "$@"
+  [ "$pending" -eq 0 ] && break
+  [ "$(date +%s)" -ge "$deadline" ] && break
+  sleep "$poll"
+done
+
+active="$(parent_active)" || exit 1
+if [ "$active" != true ]; then
+  echo "rt-close-parent: ok left-alone $parent"; exit 0
+fi
+
+comment_once() {
+  if ! gh issue view "$parent" --repo "$repo" --json comments | jq -e --arg b "$1" '[.comments[].body] | index($b)' >/dev/null; then
+    gh issue comment "$parent" --repo "$repo" --body "$1" >/dev/null
+  fi
+}
+
+if [ ${#problems[@]} -eq 0 ]; then
+  list=""; for s in "$@"; do list+="#$s, "; done
+  comment_once "All sub-issues (${list%, }) closed as completed; closing this parent."
+  gh issue close "$parent" --repo "$repo" --reason completed >/dev/null
+  gh issue edit "$parent" --repo "$repo" --remove-label "$ip" >/dev/null
+  echo "rt-close-parent: ok closed $parent"
+else
+  list="$(IFS=,; echo "${problems[*]}" | sed 's/,/, /g')"
+  gh issue edit "$parent" --repo "$repo" --add-label "$nh" >/dev/null
+  comment_once "Not all sub-issues completed: ${list}. Handing this parent back to a human."
+  gh issue edit "$parent" --repo "$repo" --remove-label "$ip" >/dev/null
+  echo "rt-close-parent: ok handed-back $parent"
+fi
