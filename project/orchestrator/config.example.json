@@ -1,0 +1,11 @@
+{
+  "repositories": ["example-org/service", "example-org/dashboard"],
+  "labels": {
+    "ready": "rt:ready",
+    "inProgress": "rt:in-progress",
+    "needsHuman": "needs-human",
+    "hold": "hold"
+  },
+  "namespace": "roundtable",
+  "chainPrefix": "pr-pipeline-"
+}
