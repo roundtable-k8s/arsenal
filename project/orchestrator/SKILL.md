@@ -53,7 +53,7 @@ rebase requests for conflicted bot PRs.
 `tend` cannot reach other knights. For every `tend: dispatch-needed {…}` line,
 send the `task` to the named `knight` with the NATS request tool. Exit 1 means a
 section could not be read or an action failed (stderr says which): note it and
-carry on; a failed action is retried next check.
+carry on; a failed action is retried next check. The line `tend: error: failed-run logs are not reachable from here; skipped CI re-runs (<n> runs not checked)` means this knight cannot download failed-run logs: note it once and carry on; those runs are read again next check.
 
 Do not do by hand what `tend` does. If it is wrong, fix the script in a PR.
 

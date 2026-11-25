@@ -29,6 +29,8 @@
 #   rerun    failed workflow run (not a merge-queue run, newer than
 #            ciMaxAgeHours) whose failed-step log matches INFRA_PATTERNS and
 #            none of TEST_PATTERNS: `gh run rerun --failed`. Once per run id.
+#            Log reads are bounded (LOG_READ_TIMEOUT); two network failures in
+#            a row stop this section for the run.
 #
 # Config (JSON, shared with scripts/status; only these fields are read):
 #   repos        ["owner/name", ...]  (or objects with "repo"/"name")
@@ -76,6 +78,12 @@ TEST_PATTERNS=(
   'compilation failed|syntax error|undefined:|cannot find symbol|error TS[0-9]+'
   'lint(ing)? (errors?|failed)'
 )
+# Reading a failed run's log downloads it from a host other than api.github.com,
+# which some knight pods cannot reach. Each read is bounded by LOG_READ_TIMEOUT
+# seconds; a read that times out or fails with one of LOG_NET_PATTERN is a
+# network failure. Two in a row stop the CI section for this run of tend.
+LOG_READ_TIMEOUT="${TEND_LOG_TIMEOUT:-20}"
+LOG_NET_PATTERN='i/o timeout|dial tcp|connection (reset|refused|timed out)|no such host|could not resolve|temporary failure in name resolution|tls handshake timeout|network is unreachable|timed out'
 
 usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 say() { if [ "$dry" = 1 ]; then echo "tend: (dry-run) $*"; else echo "tend: $*"; fi; }
@@ -278,33 +286,58 @@ infra_re="$(join_re "${INFRA_PATTERNS[@]}")"
 test_re="$(join_re "${TEST_PATTERNS[@]}")"
 cutoff="$(date -u -d "-$CI_MAX_AGE_HOURS hours" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -v-"$CI_MAX_AGE_HOURS"H +%Y-%m-%dT%H:%M:%SZ)"
+# First collect every failed run in the window with no decision yet, so that a
+# run that was not read can be counted when the section stops early.
+pending=()
 for repo in "${repos[@]}"; do
   runs="$(gh run list -R "$repo" --status failure --limit 50 \
     --json databaseId,workflowName,event,createdAt,headBranch)" \
     || { warn "could not list workflow runs of $repo"; continue; }
   while IFS=$'\t' read -r id wf; do
     [ -n "$id" ] || continue
-    key="$repo:$id"
-    done_already rerun "$key" && continue
-    log="$(gh run view "$id" -R "$repo" --log-failed 2>/dev/null)" \
-      || { warn "could not read the failed log of $repo run $id"; continue; }
-    # gh prefixes each line with "<job>\t<step>\t<timestamp> "; match the message.
-    msgs="$(sed -E 's/^[^\t]*\t[^\t]*\t//; s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?//' <<<"$log")"
-    if grep -qiE "$test_re" <<<"$msgs" || ! grep -qiE "$infra_re" <<<"$msgs"; then
-      record rerun "$key" '{"rerun":false}'   # a real failure: never re-run
-      continue
-    fi
-    hit="$(grep -iE "$infra_re" <<<"$msgs" | head -n 1 | sed -E 's/^[[:space:]]+//' | cut -c1-200 | redact)"
-    if [ "$dry" = 1 ]; then say "re-ran failed jobs of $repo run $id ($wf: $hit)"; continue; fi
-    if gh run rerun "$id" -R "$repo" --failed >/dev/null; then
-      record rerun "$key" '{"rerun":true}'
-      say "re-ran failed jobs of $repo run $id ($wf: $hit)"
-    else
-      warn "could not re-run $repo run $id"
-    fi
+    done_already rerun "$repo:$id" && continue
+    pending+=("$repo"$'\t'"$id"$'\t'"$wf")
   done < <(jq -r --arg c "$cutoff" '.[]
       | select(.event != "merge_group" and .createdAt >= $c)
       | [.databaseId, .workflowName] | @tsv' <<<"$runs")
 done
+
+logerr="$(mktemp)"; trap 'rm -f "$logerr"' EXIT
+classified=0 unreadable=0 net_fails=0 stopped=0
+for item in "${pending[@]}"; do
+  IFS=$'\t' read -r repo id wf <<<"$item"
+  if [ "$net_fails" -ge 2 ]; then stopped=1; break; fi
+  key="$repo:$id"
+  rc=0
+  log="$(timeout "$LOG_READ_TIMEOUT" gh run view "$id" -R "$repo" --log-failed 2>"$logerr")" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    # Timeout exit status is 124; otherwise judge by gh's stderr.
+    if [ "$rc" -eq 124 ] || grep -qiE "$LOG_NET_PATTERN" "$logerr"; then
+      net_fails=$((net_fails + 1)); unreadable=$((unreadable + 1)); continue
+    fi
+    net_fails=0
+    warn "could not read the failed log of $repo run $id"; continue
+  fi
+  net_fails=0; classified=$((classified + 1))
+  # gh prefixes each line with "<job>\t<step>\t<timestamp> "; match the message.
+  msgs="$(sed -E 's/^[^\t]*\t[^\t]*\t//; s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?//' <<<"$log")"
+  if grep -qiE "$test_re" <<<"$msgs" || ! grep -qiE "$infra_re" <<<"$msgs"; then
+    record rerun "$key" '{"rerun":false}'   # a real failure: never re-run
+    continue
+  fi
+  hit="$(grep -iE "$infra_re" <<<"$msgs" | head -n 1 | sed -E 's/^[[:space:]]+//' | cut -c1-200 | redact)"
+  if [ "$dry" = 1 ]; then say "re-ran failed jobs of $repo run $id ($wf: $hit)"; continue; fi
+  if gh run rerun "$id" -R "$repo" --failed >/dev/null; then
+    record rerun "$key" '{"rerun":true}'
+    say "re-ran failed jobs of $repo run $id ($wf: $hit)"
+  else
+    warn "could not re-run $repo run $id"
+  fi
+done
+if [ "$stopped" = 1 ]; then
+  warn "failed-run logs are not reachable from here; skipped CI re-runs ($((${#pending[@]} - classified)) runs not checked)"
+elif [ "$unreadable" -gt 0 ]; then
+  warn "could not read the failed logs of $unreadable runs over the network; they are retried next check"
+fi
 
 exit "$status"
