@@ -16,6 +16,7 @@ memory directory. Nothing else.
 S=/skills/project/orchestrator/scripts
 export ORCHESTRATOR_STATE_DIR=<your memory directory>/orchestrator   # state survives between checks
 CFG=<config file>   # repositories, labels, namespace, chain prefix, knights; see config.example.json
+export ORCHESTRATOR_CONFIG="$CFG"   # dispatch reads its config from here
 ```
 
 ## Procedure
