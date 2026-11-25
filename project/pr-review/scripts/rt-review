@@ -5,17 +5,19 @@
 #   rt-review [--no-queue] <pr-url> <ship_it|needs_changes> <body-file>
 #
 #   --no-queue   post the review but don't queue (draft, hold, data deletion,
-#                secrets/auth, or anything else left for a human)
+#                secrets/auth, or anything else left for a human). With
+#                ship_it it also adds the `hold` label, so automation that
+#                queues ship-it PRs (orchestrator tend) skips the PR.
 #
 # The body file is your review in Markdown, without a verdict line: any line
 # starting with "Verdict:" is removed and exactly one is appended.
 # Exits as soon as the PR is queued; it never waits for CI or the merge queue.
 set -euo pipefail
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
-queue=1
-if [ "${1:-}" = "--no-queue" ]; then queue=0; shift; fi
+queue=1; no_queue=0; queued="no"
+if [ "${1:-}" = "--no-queue" ]; then queue=0; no_queue=1; shift; fi
 [ $# -eq 3 ] || usage
 url="$1"; verdict="$2"; body_file="$3"
 
@@ -34,6 +36,14 @@ num="${url##*/}"
 tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
 { grep -viE '^[[:space:]>*_#-]*verdict:' "$body_file" || true; printf '\n%s\n' "$line"; } > "$tmp"
 
+# A ship-it left for a human gets the hold label. It is added before the review
+# is posted: if that fails, nothing is posted, so no unlabelled ship-it review.
+if [ "$no_queue" = 1 ] && [ "$verdict" = ship_it ]; then
+  gh pr edit "$url" --add-label hold >/dev/null \
+    || { echo "rt-review: could not add the hold label to $url; no review posted" >&2; exit 1; }
+  queued="no (--no-queue; hold label added)"
+fi
+
 # Post once. If gh reports an error, check whether the review landed anyway
 # before retrying, so a flaky response doesn't produce a duplicate review.
 posted_since() {
@@ -50,7 +60,6 @@ fi
 [ "$(posted_since "$start")" = true ] \
   || { echo "rt-review: the review is not on $url after posting; check it by hand" >&2; exit 1; }
 
-queued="no"
 if [ "$queue" = 1 ]; then
   pr="$(gh pr view "$url" --json isDraft,labels,state)"
   if [ "$(jq -r .state <<<"$pr")" != OPEN ]; then
