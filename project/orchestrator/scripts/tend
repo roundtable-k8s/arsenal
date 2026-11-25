@@ -20,6 +20,14 @@
 #            prints `tend: dispatch-needed {"kind","knight","taskId","task"}`
 #            for the agent (or scripts/dispatch) to send. Once per head commit.
 #            Not done with `rebase: "off"` (see Config).
+#   fix-check  open, non-draft, bot-authored PR, not conflicted, whose newest
+#            verdict is "ship it" and that has a failed required check on its
+#            head commit for longer than fixCheckMinutes: the PR is approved
+#            but cannot merge, and PR feedback only acts on "needs changes".
+#            Prints `tend: dispatch-needed {"kind":"fix-check",...}` asking the
+#            repository's knight to push a fix to the same branch. Checks whose
+#            failed log is an infrastructure failure (see rerun) are left to
+#            rerun. Once per head commit. Needs `timeout` (coreutils).
 #   requeue  Failed pipeline chain (name starts with chainPrefix, created by
 #            issue pickup) whose failed step error is transient (TRANSIENT_*
 #            below), issue still open and not already ready/in progress:
@@ -50,6 +58,8 @@
 #                value is a usage error (exit 2).
 #   botAuthor    extra regex for bot PR author logins (gh's is_bot is used too)
 #   ciMaxAgeHours  only look at CI runs this recent (default: 24)
+#   fixCheckMinutes  minutes a required check must have been failed before
+#                  fix-check asks for a fix (default: 20)
 #
 # State is a small JSON file of what was already done, keyed per action; it
 # is written after every action so an interrupted run loses nothing.
@@ -140,6 +150,7 @@ NAMESPACE="$(cfg '.namespace // ""')"
 PREFIX="$(cfg '.chainPrefix // "pr-pipeline-"')"
 BOT_RE="$(cfg '.botAuthor // ""')"
 CI_MAX_AGE_HOURS="$(cfg '.ciMaxAgeHours // 24')"
+FIX_CHECK_MINUTES="$(cfg '.fixCheckMinutes // 20')"
 
 # --- state ------------------------------------------------------------------
 if [ -e "$state" ]; then
@@ -357,5 +368,57 @@ if [ "$stopped" = 1 ]; then
 elif [ "$unreadable" -gt 0 ]; then
   warn "could not read the failed logs of $unreadable runs over the network; they are retried next check"
 fi
+
+# ---- fix-check: approved PRs blocked by a failed required check -------------
+# Reuses the CI patterns above: an infrastructure failure is a re-run (done by
+# the section above), not a fix.
+for repo in "${repos[@]}"; do
+  prs="$(gh pr list -R "$repo" --state open --limit 200 \
+    --json number,url,isDraft,mergeStateStatus,headRefOid,author)" \
+    || { warn "could not list PRs of $repo"; continue; }
+  knight="$(jq -r --arg r "$repo" '.knights[$r] // .knights["*"] // ""' "$config")"
+  while IFS=$'\t' read -r num url sha; do
+    [ -n "$num" ] || continue
+    key="$repo#$num@$sha"
+    done_already fixcheck "$key" && continue
+    v="$(verdict "$repo" "$num")" || { warn "could not read the verdict of $url"; continue; }
+    ship_it "$v" || continue
+    # gh pr checks exits 8 while a check fails or is pending: judge by the output
+    checks="$(gh pr checks "$num" -R "$repo" --required --json name,bucket,link,completedAt 2>/dev/null)" || true
+    jq -e 'type == "array"' <<<"${checks:-}" >/dev/null 2>&1 || continue   # no required checks, or unreadable: next check
+    details=""
+    while IFS=$'\t' read -r cname clink; do
+      [ -n "$cname" ] || continue
+      runid="$(sed -nE 's#.*/actions/runs/([0-9]+).*#\1#p' <<<"$clink")"
+      [ -n "$runid" ] || continue
+      rc=0
+      log="$(timeout "$LOG_READ_TIMEOUT" gh run view "$runid" -R "$repo" --log-failed 2>/dev/null)" || rc=$?
+      [ "$rc" -eq 0 ] || continue   # log unreadable: decided next check
+      msgs="$(sed -E 's/^[^\t]*\t[^\t]*\t//; s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?//' <<<"$log")"
+      if ! grep -qiE "$test_re" <<<"$msgs" && grep -qiE "$infra_re" <<<"$msgs"; then
+        continue   # infrastructure failure: re-run, not a fix
+      fi
+      step="$(head -n 1 <<<"$log" | awk -F'\t' 'NF >= 2 {print $2}' | redact)"
+      details+="${details:+; }check \"$cname\" (failed step: ${step:-unknown}, $clink)"
+    done < <(jq -r --argjson m "$FIX_CHECK_MINUTES" '.[]
+        | select(.bucket == "fail" and ((.completedAt // "") | length) > 0)
+        | select((now - (.completedAt | fromdateiso8601? // now)) > ($m * 60))
+        | [.name, (.link // "")] | @tsv' <<<"$checks")
+    [ -n "$details" ] || continue
+    if [ -z "$knight" ]; then
+      record fixcheck "$key" '{"knight":null}'
+      say "$url is approved but required checks fail; no knight configured for $repo in knights, fix it by hand"
+      continue
+    fi
+    task="$url is approved (ship it) but cannot merge: required $details has been failing for over $FIX_CHECK_MINUTES minutes on head ${sha:0:7}. Read the failed job log, fix the cause on the PR's own branch and push it to the same branch (do not open a new PR). Run the repo's CI commands (see its AGENTS.md) first. Do not queue or review. Reply \"$url fixed <sha>\" or \"$url blocked: <reason>\"."
+    msg="$(jq -nc --arg k "$knight" --arg id "fix-check-${repo##*/}-$num-${sha:0:7}" --arg t "$task" \
+      '{kind: "fix-check", knight: $k, taskId: $id, task: $t}')"
+    record fixcheck "$key" "$msg"
+    say "dispatch-needed $msg"
+  done < <(jq -r --arg bot "$BOT_RE" '.[]
+      | select((.isDraft | not) and .mergeStateStatus != "DIRTY")
+      | select(.author.is_bot == true or (($bot != "") and ((.author.login // "") | test($bot))))
+      | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
+done
 
 exit "$status"
