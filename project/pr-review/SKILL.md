@@ -32,9 +32,16 @@ bash /skills/project/pr-review/scripts/rt-review --no-queue https://github.com/r
 - The verdict is an argument: `ship_it` or `needs_changes`. Nothing else is accepted.
 - `ship_it` queues the PR (`gh pr merge --auto`) unless it is a draft, has the
   `hold` label, or you pass `--no-queue`. `needs_changes` never queues.
+- `ship_it --no-queue` adds the `hold` label before posting the review, so the
+  orchestrator's `tend` won't queue a PR you deliberately left for a human, and
+  merge-guard blocks the merge until a human removes `hold`. If the label can't
+  be added, nothing is posted and the script exits 1. `needs_changes` never adds
+  `hold`.
 - It posts as a comment review (the knights' bot account can't approve its own
   PRs) and checks the review actually landed, without posting duplicates.
 - It returns as soon as the PR is queued. Don't wait for CI or the merge queue
   afterwards: your task is done.
 - Its last output line (`rt-review: posted 'Verdict: ...' on <url>; queued: ...`)
   is what to report in your final message.
+
+Tests: `bash project/pr-review/tests/test.sh` (uses a `gh` stub).
