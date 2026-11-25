@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+# tend: the orchestrator check's mechanical actions. Every action is idempotent
+# and prints exactly one line when it is taken; nothing when already done.
+#
+#   tend [--config <file>] [--state <file>] [--deps <file>] [--dry-run]
+#
+#   --config   config file (default: $ORCHESTRATOR_CONFIG, else
+#              config.json next to this skill)
+#   --state    state file (default: $ORCHESTRATOR_STATE_DIR/tend-state.json)
+#   --deps     dependency list (default: deps.json next to the state file)
+#   --dry-run  print what would be done; change nothing on GitHub or on disk
+#
+# Actions, per repository in the config:
+#   queue    open PR whose newest "Verdict:" line (non-dismissed reviews and PR
+#            comments, as merge-guard reads it) is "ship it", not a draft, no
+#            hold label, not conflicted, auto-merge off: `gh pr merge --auto`
+#            (as rt-review queues). Once per head commit.
+#   rebase   open, non-draft, bot-authored PR whose mergeStateStatus is DIRTY:
+#            tend cannot reach another knight, so it records the request and
+#            prints `tend: dispatch-needed {"kind","knight","taskId","task"}`
+#            for the agent (or scripts/dispatch) to send. Once per head commit.
+#   requeue  Failed pipeline chain (name starts with chainPrefix, created by
+#            issue pickup) whose failed step error is transient (TRANSIENT_*
+#            below), issue still open and not already ready/in progress:
+#            remove needs-human, add ready, comment why. Once per chain run.
+#   deps     deps file maps "owner/repo#N" -> ["owner/repo#M", ...]: when every
+#            issue it waits on is closed, the open issue loses needs-human and
+#            gets the ready label. Once per issue.
+#   rerun    failed workflow run (not a merge-queue run, newer than
+#            ciMaxAgeHours) whose failed-step log matches INFRA_PATTERNS and
+#            none of TEST_PATTERNS: `gh run rerun --failed`. Once per run id.
+#
+# Config (JSON, shared with scripts/status; only these fields are read):
+#   repos        ["owner/name", ...]  (or objects with "repo"/"name")
+#   labels       {ready, inProgress, needsHuman, hold}
+#                defaults: rt:ready, rt:in-progress, needs-human, hold
+#   namespace    Kubernetes namespace of the chains (default: kubectl's)
+#   chainPrefix  pipeline chain name prefix (default: pr-pipeline-)
+#   knights      {"owner/name": "<knight>", "*": "<knight>"}: who rebases
+#   botAuthor    extra regex for bot PR author logins (gh's is_bot is used too)
+#   ciMaxAgeHours  only look at CI runs this recent (default: 24)
+#
+# State is a small JSON file of what was already done, keyed per action; it
+# is written after every action so an interrupted run loses nothing.
+# Exit status: 0 when every section was read, 1 when one could not be read
+# or an action failed (said on stderr), 2 for usage errors.
+set -uo pipefail
+
+# --- patterns (case-insensitive extended regexes) ---------------------------
+# A failed pipeline step whose "<step>: <error>" matches one of these was not
+# the issue's fault: re-queue it.
+TRANSIENT_PATTERNS=(
+  'stopped before finishing'             # knight pod replaced mid-task (dead letter)
+  '^plan: .*timed out'                   # plan step timeout
+  'overloaded|provider_5xx|\b529\b'      # model provider overload
+)
+# A failed CI step log matching one of these is an infrastructure error...
+INFRA_PATTERNS=(
+  'could not resolve host|temporary failure in name resolution'
+  'connection (reset|refused|timed out)|i/o timeout|tls handshake timeout'
+  'unexpected eof|network is unreachable'
+  'failed to (download|fetch)|error downloading|download failed'
+  '(toomanyrequests|rate limit).*(registry|pull|docker|ghcr|quay)'
+  'manifest unknown|error pulling image|failed to pull|pull access denied'
+  '(registry|ghcr\.io|docker\.io|quay\.io).*(5[0-9][0-9]|timeout|unavailable)'
+  '\b(502|503|504) (bad gateway|service unavailable|gateway time-?out)'
+  'runner has received a shutdown signal|lost communication with the server'
+  'no space left on device|the hosted runner'
+)
+# ...unless it also matches one of these: a test or build failure is never
+# re-run, whatever else the log says.
+TEST_PATTERNS=(
+  '^--- FAIL|^FAIL[[:space:]]|^not ok [0-9]'
+  'assertion ?error|expected .* (got|to equal|but)'
+  '[0-9]+ (tests?|specs?) failed|tests? failed|failing tests?'
+  'compilation failed|syntax error|undefined:|cannot find symbol|error TS[0-9]+'
+  'lint(ing)? (errors?|failed)'
+)
+
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+say() { if [ "$dry" = 1 ]; then echo "tend: (dry-run) $*"; else echo "tend: $*"; fi; }
+warn() { echo "tend: error: $*" >&2; status=1; }
+redact() { sed -E 's/(gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}/[redacted]/g'; }
+join_re() { local IFS='|'; echo "$*"; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+config="${ORCHESTRATOR_CONFIG:-$here/../config.json}"
+state="" deps="" dry=0 status=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --config) [ $# -ge 2 ] || usage; config="$2"; shift 2 ;;
+    --state) [ $# -ge 2 ] || usage; state="$2"; shift 2 ;;
+    --deps) [ $# -ge 2 ] || usage; deps="$2"; shift 2 ;;
+    --dry-run) dry=1; shift ;;
+    -h|--help) usage ;;
+    *) echo "tend: unknown argument '$1'" >&2; usage ;;
+  esac
+done
+if [ -z "$state" ]; then
+  [ -n "${ORCHESTRATOR_STATE_DIR:-}" ] \
+    || { echo "tend: no state file: pass --state <file> or set ORCHESTRATOR_STATE_DIR" >&2; exit 2; }
+  state="$ORCHESTRATOR_STATE_DIR/tend-state.json"
+fi
+[ -n "$deps" ] || deps="$(dirname "$state")/deps.json"
+[ -r "$config" ] || { echo "tend: config file '$config' not found (pass --config <file>)" >&2; exit 2; }
+jq -e 'type == "object"' "$config" >/dev/null 2>&1 \
+  || { echo "tend: config file '$config' is not a JSON object" >&2; exit 2; }
+
+cfg() { jq -r "$1" "$config"; }
+mapfile -t repos < <(cfg '(.repos // .repositories // [])[] | if type == "string" then . else (.repo // .name) end')
+[ ${#repos[@]} -gt 0 ] || { echo "tend: no repos in '$config'" >&2; exit 2; }
+L_READY="$(cfg '.labels.ready // "rt:ready"')"
+L_PROGRESS="$(cfg '.labels.inProgress // .labels.in_progress // "rt:in-progress"')"
+L_HUMAN="$(cfg '.labels.needsHuman // .labels.needs_human // "needs-human"')"
+L_HOLD="$(cfg '.labels.hold // "hold"')"
+NAMESPACE="$(cfg '.namespace // ""')"
+PREFIX="$(cfg '.chainPrefix // "pr-pipeline-"')"
+BOT_RE="$(cfg '.botAuthor // ""')"
+CI_MAX_AGE_HOURS="$(cfg '.ciMaxAgeHours // 24')"
+
+# --- state ------------------------------------------------------------------
+if [ -e "$state" ]; then
+  jq -e 'type == "object"' "$state" >/dev/null 2>&1 \
+    || { echo "tend: state file '$state' is not a JSON object; fix or remove it" >&2; exit 2; }
+  S="$(cat "$state")"
+else
+  S='{}'
+fi
+done_already() { jq -e --arg a "$1" --arg k "$2" '.[$a][$k] != null' <<<"$S" >/dev/null; }
+record() { # action key [extra-json]
+  local x="${3:-}"; [ -n "$x" ] || x='{}'
+  S="$(jq --arg a "$1" --arg k "$2" --argjson x "$x" \
+    --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.[$a][$k] = ({at: $t} + $x)' <<<"$S")"
+  [ "$dry" = 1 ] && return 0
+  mkdir -p "$(dirname "$state")" && printf '%s\n' "$S" > "$state.tmp" && mv "$state.tmp" "$state" \
+    || warn "could not write state file '$state'"
+}
+
+# Newest "Verdict:" line of a PR, read the way merge-guard reads it.
+verdict() { # repo number
+  local rv cm
+  rv="$(gh api --paginate "repos/$1/pulls/$2/reviews?per_page=100")" || return 1
+  cm="$(gh api --paginate "repos/$1/issues/$2/comments?per_page=100")" || return 1
+  {
+    jq -s -c 'add // [] | .[] | select(.state != "DISMISSED") | [.submitted_at, .body]' <<<"$rv"
+    jq -s -c 'add // [] | .[] | [.created_at, .body]' <<<"$cm"
+  } | jq -rs 'sort_by(.[0]) | .[] | .[1] // ""' \
+    | tr -d '\r' | sed -E 's/[*_`]//g; s/^[[:space:]>#-]+//' \
+    | grep -iE '^verdict:' | tail -n 1 || true
+}
+ship_it() { grep -qiE '^verdict:[[:space:]]*ship it([^[:alnum:]]|$)' <<<"$1"; }
+
+# ---- queue + rebase --------------------------------------------------------
+for repo in "${repos[@]}"; do
+  prs="$(gh pr list -R "$repo" --state open --limit 200 \
+    --json number,url,isDraft,labels,autoMergeRequest,mergeStateStatus,headRefOid,author)" \
+    || { warn "could not list PRs of $repo"; continue; }
+
+  # queue: ship-it PRs that are not queued
+  while IFS=$'\t' read -r num url sha; do
+    [ -n "$num" ] || continue
+    key="$repo#$num@$sha"
+    done_already queue "$key" && continue
+    v="$(verdict "$repo" "$num")" || { warn "could not read the verdict of $url"; continue; }
+    ship_it "$v" || continue
+    if [ "$dry" = 1 ]; then say "queued $repo#$num (ship it, head ${sha:0:7})"; continue; fi
+    if out="$(gh pr merge "$url" --auto 2>&1)" || grep -qi 'already' <<<"$out"; then
+      record queue "$key"
+      say "queued $repo#$num (ship it, head ${sha:0:7})"
+    else
+      warn "could not queue $url ($(head -n 1 <<<"$out" | redact))"
+    fi
+  done < <(jq -r --arg hold "$L_HOLD" '.[]
+      | select((.isDraft | not) and .autoMergeRequest == null and .mergeStateStatus != "DIRTY")
+      | select([.labels[].name] | index($hold) | not)
+      | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
+
+  # rebase: conflicted bot PRs
+  knight="$(jq -r --arg r "$repo" '.knights[$r] // .knights["*"] // ""' "$config")"
+  while IFS=$'\t' read -r num url sha; do
+    [ -n "$num" ] || continue
+    key="$repo#$num@$sha"
+    done_already rebase "$key" && continue
+    if [ -z "$knight" ]; then
+      record rebase "$key" '{"knight":null}'
+      say "$url conflicts with its base; no knight configured for $repo in knights, rebase it by hand"
+      continue
+    fi
+    task="$url conflicts with its base branch and nothing has rebased it. Rebase it onto the base branch, resolve the conflicts keeping both sides' intent, run the repo's CI commands (see its AGENTS.md), then push with --force-with-lease. Do not change behaviour beyond the conflict resolution. Do not queue or review. Reply \"<url> rebased <sha>\" or \"<url> blocked: <reason>\"."
+    msg="$(jq -nc --arg k "$knight" --arg id "rebase-${repo##*/}-$num-${sha:0:7}" --arg t "$task" \
+      '{kind: "rebase", knight: $k, taskId: $id, task: $t}')"
+    record rebase "$key" "$msg"
+    say "dispatch-needed $msg"
+  done < <(jq -r --arg bot "$BOT_RE" '.[]
+      | select((.isDraft | not) and .mergeStateStatus == "DIRTY")
+      | select(.author.is_bot == true or (($bot != "") and ((.author.login // "") | test($bot))))
+      | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
+done
+
+# ---- requeue transient chain failures --------------------------------------
+issue_json() { gh issue view "$2" -R "$1" --json state,labels; }
+has_label() { jq -e --arg l "$2" '[.labels[].name] | index($l)' <<<"$1" >/dev/null; }
+
+kargs=(); [ -n "$NAMESPACE" ] && kargs=(-n "$NAMESPACE")
+if chains="$(kubectl "${kargs[@]}" get chains.ai.roundtable.io -o json 2>/dev/null)"; then
+  transient_re="$(join_re "${TRANSIENT_PATTERNS[@]}")"
+  while IFS=$'\t' read -r name started repo num; do
+    [ -n "$name" ] || continue
+    key="$name@$started"
+    done_already requeue "$key" && continue
+    err="$(jq -r --arg n "$name" '.items[] | select(.metadata.name == $n) | .status.stepStatuses // []
+      | map(select(.phase == "Failed") | "\(.name): \(.error // "")") | .[]' <<<"$chains")"
+    grep -qiE "$transient_re" <<<"$err" || continue   # not transient: left for the check
+    reason="$(grep -iE "$transient_re" <<<"$err" | head -n 1 | cut -c1-300 | redact)"
+    ij="$(issue_json "$repo" "$num")" || { warn "could not read $repo#$num"; continue; }
+    if [ "$(jq -r .state <<<"$ij")" != OPEN ] || has_label "$ij" "$L_READY" || has_label "$ij" "$L_PROGRESS"; then
+      record requeue "$key" '{"skipped":true}'   # closed or already re-queued
+      continue
+    fi
+    if [ "$dry" = 1 ]; then say "re-queued $repo#$num (chain $name failed transiently: $reason)"; continue; fi
+    body="Re-queued automatically: pipeline chain \`$name\` failed for a transient reason, not because of the issue (\`$reason\`)."
+    eargs=(--add-label "$L_READY"); has_label "$ij" "$L_HUMAN" && eargs+=(--remove-label "$L_HUMAN")
+    if gh issue edit "$num" -R "$repo" "${eargs[@]}" >/dev/null \
+       && gh issue comment "$num" -R "$repo" --body "$body" >/dev/null; then
+      record requeue "$key"
+      say "re-queued $repo#$num (chain $name failed transiently: $reason)"
+    else
+      warn "could not re-queue $repo#$num"
+    fi
+  done < <(jq -r --arg p "$PREFIX" '.items[]
+      | select((.metadata.name | startswith($p)) and .status.phase == "Failed")
+      | (.metadata.annotations // {}) as $a
+      | (try (.spec.input | fromjson) catch {}) as $in
+      | [.metadata.name, (.status.startedAt // ""),
+         ($a["ai.roundtable.io/pickup-repo"] // $in.repo // ""),
+         ($a["ai.roundtable.io/pickup-issue"] // ($in.issue | tostring?) // "")]
+      | select(.[2] != "" and .[3] != "" and .[3] != "null") | @tsv' <<<"$chains")
+else
+  warn "could not list chains (kubectl get chains.ai.roundtable.io failed); skipped re-queueing"
+fi
+
+# ---- deps feeder -----------------------------------------------------------
+if [ -e "$deps" ]; then
+  if jq -e 'type == "object"' "$deps" >/dev/null 2>&1; then
+    while IFS=$'\t' read -r tgt waits; do
+      [ -n "$tgt" ] || continue
+      done_already deps "$tgt" && continue
+      all_closed=1
+      for d in $waits; do
+        st="$(gh issue view "${d##*#}" -R "${d%#*}" --json state | jq -r .state)" \
+          || { warn "could not read $d"; all_closed=0; break; }
+        [ "$st" = CLOSED ] || { all_closed=0; break; }
+      done
+      [ "$all_closed" = 1 ] || continue
+      ij="$(issue_json "${tgt%#*}" "${tgt##*#}")" || { warn "could not read $tgt"; continue; }
+      if [ "$(jq -r .state <<<"$ij")" != OPEN ] || has_label "$ij" "$L_READY" || has_label "$ij" "$L_PROGRESS"; then
+        record deps "$tgt" '{"skipped":true}'
+        continue
+      fi
+      if [ "$dry" = 1 ]; then say "dependencies closed ($waits) -> queued $tgt"; continue; fi
+      eargs=(--add-label "$L_READY"); has_label "$ij" "$L_HUMAN" && eargs+=(--remove-label "$L_HUMAN")
+      if gh issue edit "${tgt##*#}" -R "${tgt%#*}" "${eargs[@]}" >/dev/null; then
+        record deps "$tgt"
+        say "dependencies closed ($waits) -> queued $tgt"
+      else
+        warn "could not queue $tgt"
+      fi
+    done < <(jq -r 'to_entries[] | select(.key | test("^[^/#\\s]+/[^/#\\s]+#[0-9]+$"))
+        | [.key, ([.value[]? | select(test("^[^/#\\s]+/[^/#\\s]+#[0-9]+$"))] | join(" "))]
+        | select(.[1] != "") | @tsv' "$deps")
+  else
+    warn "dependency file '$deps' is not a JSON object (\"owner/repo#N\": [\"owner/repo#M\", ...])"
+  fi
+fi
+
+# ---- CI re-runs on infrastructure errors -----------------------------------
+infra_re="$(join_re "${INFRA_PATTERNS[@]}")"
+test_re="$(join_re "${TEST_PATTERNS[@]}")"
+cutoff="$(date -u -d "-$CI_MAX_AGE_HOURS hours" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -v-"$CI_MAX_AGE_HOURS"H +%Y-%m-%dT%H:%M:%SZ)"
+for repo in "${repos[@]}"; do
+  runs="$(gh run list -R "$repo" --status failure --limit 50 \
+    --json databaseId,workflowName,event,createdAt,headBranch)" \
+    || { warn "could not list workflow runs of $repo"; continue; }
+  while IFS=$'\t' read -r id wf; do
+    [ -n "$id" ] || continue
+    key="$repo:$id"
+    done_already rerun "$key" && continue
+    log="$(gh run view "$id" -R "$repo" --log-failed 2>/dev/null)" \
+      || { warn "could not read the failed log of $repo run $id"; continue; }
+    # gh prefixes each line with "<job>\t<step>\t<timestamp> "; match the message.
+    msgs="$(sed -E 's/^[^\t]*\t[^\t]*\t//; s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?//' <<<"$log")"
+    if grep -qiE "$test_re" <<<"$msgs" || ! grep -qiE "$infra_re" <<<"$msgs"; then
+      record rerun "$key" '{"rerun":false}'   # a real failure: never re-run
+      continue
+    fi
+    hit="$(grep -iE "$infra_re" <<<"$msgs" | head -n 1 | sed -E 's/^[[:space:]]+//' | cut -c1-200 | redact)"
+    if [ "$dry" = 1 ]; then say "re-ran failed jobs of $repo run $id ($wf: $hit)"; continue; fi
+    if gh run rerun "$id" -R "$repo" --failed >/dev/null; then
+      record rerun "$key" '{"rerun":true}'
+      say "re-ran failed jobs of $repo run $id ($wf: $hit)"
+    else
+      warn "could not re-run $repo run $id"
+    fi
+  done < <(jq -r --arg c "$cutoff" '.[]
+      | select(.event != "merge_group" and .createdAt >= $c)
+      | [.databaseId, .workflowName] | @tsv' <<<"$runs")
+done
+
+exit "$status"
