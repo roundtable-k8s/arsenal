@@ -31,7 +31,10 @@
 #            ciMaxAgeHours) whose failed-step log matches INFRA_PATTERNS and
 #            none of TEST_PATTERNS: `gh run rerun --failed`. Once per run id.
 #            Log reads are bounded (LOG_READ_TIMEOUT); two network failures in
-#            a row stop this section for the run.
+#            a row stop this section for the run. Needs `timeout` (coreutils).
+#            "(<n> runs not checked)" counts every pending run without a
+#            decision: not tried after the stop, tried but unreachable, and
+#            runs whose log has expired.
 #
 # Config (JSON, shared with scripts/status; only these fields are read):
 #   repos        ["owner/name", ...]  (or objects with "repo"/"name")
@@ -196,26 +199,27 @@ for repo in "${repos[@]}"; do
       | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
 
   # rebase: conflicted bot PRs (skipped when the PR feedback watcher owns them)
-  [ "$REBASE" = dispatch ] || continue
-  knight="$(jq -r --arg r "$repo" '.knights[$r] // .knights["*"] // ""' "$config")"
-  while IFS=$'\t' read -r num url sha; do
-    [ -n "$num" ] || continue
-    key="$repo#$num@$sha"
-    done_already rebase "$key" && continue
-    if [ -z "$knight" ]; then
-      record rebase "$key" '{"knight":null}'
-      say "$url conflicts with its base; no knight configured for $repo in knights, rebase it by hand"
-      continue
-    fi
-    task="$url conflicts with its base branch and nothing has rebased it. Rebase it onto the base branch, resolve the conflicts keeping both sides' intent, run the repo's CI commands (see its AGENTS.md), then push with --force-with-lease. Do not change behaviour beyond the conflict resolution. Do not queue or review. Reply \"<url> rebased <sha>\" or \"<url> blocked: <reason>\"."
-    msg="$(jq -nc --arg k "$knight" --arg id "rebase-${repo##*/}-$num-${sha:0:7}" --arg t "$task" \
-      '{kind: "rebase", knight: $k, taskId: $id, task: $t}')"
-    record rebase "$key" "$msg"
-    say "dispatch-needed $msg"
-  done < <(jq -r --arg bot "$BOT_RE" '.[]
-      | select((.isDraft | not) and .mergeStateStatus == "DIRTY")
-      | select(.author.is_bot == true or (($bot != "") and ((.author.login // "") | test($bot))))
-      | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
+  if [ "$REBASE" = dispatch ]; then
+    knight="$(jq -r --arg r "$repo" '.knights[$r] // .knights["*"] // ""' "$config")"
+    while IFS=$'\t' read -r num url sha; do
+      [ -n "$num" ] || continue
+      key="$repo#$num@$sha"
+      done_already rebase "$key" && continue
+      if [ -z "$knight" ]; then
+        record rebase "$key" '{"knight":null}'
+        say "$url conflicts with its base; no knight configured for $repo in knights, rebase it by hand"
+        continue
+      fi
+      task="$url conflicts with its base branch and nothing has rebased it. Rebase it onto the base branch, resolve the conflicts keeping both sides' intent, run the repo's CI commands (see its AGENTS.md), then push with --force-with-lease. Do not change behaviour beyond the conflict resolution. Do not queue or review. Reply \"<url> rebased <sha>\" or \"<url> blocked: <reason>\"."
+      msg="$(jq -nc --arg k "$knight" --arg id "rebase-${repo##*/}-$num-${sha:0:7}" --arg t "$task" \
+        '{kind: "rebase", knight: $k, taskId: $id, task: $t}')"
+      record rebase "$key" "$msg"
+      say "dispatch-needed $msg"
+    done < <(jq -r --arg bot "$BOT_RE" '.[]
+        | select((.isDraft | not) and .mergeStateStatus == "DIRTY")
+        | select(.author.is_bot == true or (($bot != "") and ((.author.login // "") | test($bot))))
+        | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
+  fi
 done
 
 # ---- requeue transient chain failures --------------------------------------
@@ -319,14 +323,15 @@ logerr="$(mktemp)"; trap 'rm -f "$logerr"' EXIT
 classified=0 unreadable=0 net_fails=0 stopped=0
 for item in "${pending[@]}"; do
   IFS=$'\t' read -r repo id wf <<<"$item"
-  if [ "$net_fails" -ge 2 ]; then stopped=1; break; fi
   key="$repo:$id"
   rc=0
   log="$(timeout "$LOG_READ_TIMEOUT" gh run view "$id" -R "$repo" --log-failed 2>"$logerr")" || rc=$?
   if [ "$rc" -ne 0 ]; then
     # Timeout exit status is 124; otherwise judge by gh's stderr.
     if [ "$rc" -eq 124 ] || grep -qiE "$LOG_NET_PATTERN" "$logerr"; then
-      net_fails=$((net_fails + 1)); unreadable=$((unreadable + 1)); continue
+      net_fails=$((net_fails + 1)); unreadable=$((unreadable + 1))
+      if [ "$net_fails" -ge 2 ]; then stopped=1; break; fi
+      continue
     fi
     net_fails=0
     warn "could not read the failed log of $repo run $id"; continue

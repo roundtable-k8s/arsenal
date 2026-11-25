@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests for scripts/tend using gh and kubectl stubs on PATH.
-#   bash project/orchestrator/tests/test.sh
+#   bash project/orchestrator/tests/tend.test.sh
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 tend="$here/../scripts/tend"
@@ -16,6 +16,7 @@ export FIX="$work/fix" LOG="$work/log"
 #   run list -R o/r         -> $FIX/runs-o_r.json (default [])
 #   run view ID ... --log-failed -> $FIX/log-ID.txt
 #   $FIX/net-run-view: every run view fails with a network error; $FIX/slow-run-view: it hangs
+#   $FIX/net-run-ID: the run view of that one run fails with a network error
 #   pr merge / issue edit / issue comment / run rerun: logged; $FIX/fail-<a>-<b> fails it.
 cat > "$work/bin/gh" <<'STUB'
 #!/usr/bin/env bash
@@ -40,6 +41,7 @@ case "$1" in
       "run list") if [ -e "$FIX/runs-$repo.json" ]; then cat "$FIX/runs-$repo.json"; else echo '[]'; fi ;;
       "run view")
         [ -e "$FIX/net-run-view" ] && { echo "error downloading logs: dial tcp 140.82.112.6:443: i/o timeout" >&2; exit 1; }
+        [ -e "$FIX/net-run-$3" ] && { echo "error downloading logs: dial tcp 140.82.112.6:443: i/o timeout" >&2; exit 1; }
         [ -e "$FIX/slow-run-view" ] && exec sleep 5
         cat "$FIX/log-$3.txt" ;;
       "pr merge"|"issue edit"|"issue comment"|"run rerun") : ;;
@@ -279,6 +281,24 @@ touch "$FIX/slow-run-view"
 out="$(TEND_LOG_TIMEOUT=1 "$tend" --config "$cfg" --state "$ST" 2>&1)"; rc=$?
 [ $rc -eq 1 ] && [ "$(grep -c "run view" "$LOG")" -eq 2 ] && grep -qF "skipped CI re-runs (10 runs not checked)" <<<"$out"
 check "rerun: two reads hitting the time bound stop the section" $?
+
+# exactly the last two pending runs fail on the network: same summary line
+reset; jq -nc '[1,2,3,4] | map({databaseId: ., workflowName: "CI", event: "pull_request", createdAt: "'"$(now)"'", headBranch: "b"})' > "$FIX/runs-o_r.json"
+for i in 1 2; do printf 'build\tSet up job\t2026-01-01T00:00:00.0000000Z real failure\n' > "$FIX/log-$i.txt"; done
+touch "$FIX/net-run-3" "$FIX/net-run-4"
+out="$("$tend" --config "$cfg" --state "$ST" 2>&1)"; rc=$?
+[ $rc -eq 1 ] && [ "$(grep -c "tend: error:" <<<"$out")" -eq 1 ] \
+  && grep -qF "failed-run logs are not reachable from here; skipped CI re-runs (2 runs not checked)" <<<"$out"
+check "rerun: last two runs unreachable: 'not reachable' line once, exit 1" $?
+! logged "run rerun"; check "rerun: last two runs unreachable: no run rerun call" $?
+
+# rebase off must not skip the rest of the repository loop
+reset; jq -n '{repos: ["o/r", "o/s"], rebase: "off", knights: {"*": "coder-knight"}}' > "$work/off2.json"
+echo '[]' > "$FIX/prs-o_r.json"
+jq -c '[{number: 7, url: "https://github.com/o/s/pull/7", isDraft: false, labels: [], autoMergeRequest: null, mergeStateStatus: "CLEAN", headRefOid: "abcdef1234567", author: {login: "someone", is_bot: false}}]' <<<null > "$FIX/prs-o_s.json"
+jq -nc '[{state: "COMMENTED", submitted_at: "2026-01-01T00:00:00Z", body: "Verdict: ship it"}]' > "$FIX/reviews-o_s-7.json"
+out="$("$tend" --config "$work/off2.json" --state "$ST" 2>&1)"; rc=$?
+[ $rc -eq 0 ] && [ "$out" = "tend: queued o/s#7 (ship it, head abcdef1)" ]; check "rebase: off -> a ship-it PR in a later repository is still queued" $?
 
 # ---- all at once ----
 reset; prs '[{"number":1},{"number":2,"bot":true,"mss":"DIRTY"}]'; reviews 1 'Verdict: ship it'
