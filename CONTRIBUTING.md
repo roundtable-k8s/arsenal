@@ -207,28 +207,27 @@ metadata:
 Knights are configured through their **Knight CR**, not per-knight Helm values.
 The operator adds one git-sync sidecar per arsenal (syncing to `/arsenal/<name>`)
 and a skill-filter sidecar that links the categories in `spec.skills` into
-`/skills/<category>/<skill>`. This repo is what `spec.arsenal` resolves to by
-default (`arsenal: {}`); extra
-arsenals in `spec.arsenals` are merged after it, per skill (the last arsenal
-providing `<category>/<skill>` wins).
+`/skills/<category>/<skill>`. This repo is what an empty `spec.arsenals` entry
+(`{name: platform}`) resolves to by default; extra arsenals follow it in the list
+and are merged per skill (the last arsenal providing `<category>/<skill>` wins).
 
 ```yaml
 # Galahad (security) — shared + project from this repo, security from a personal repo
 spec:
   skills: [shared, project, security]
-  arsenal:                       # same as `arsenal: {}` — these are the defaults
-    repo: https://github.com/roundtable-k8s/arsenal
-    ref: main
-    period: 300s
   arsenals:
+    - name: platform             # defaults: this repo @ main
     - name: my-skills            # synced to /arsenal/my-skills
       repo: https://github.com/<you>/<your-skills>
       ref: main
+      periodSeconds: 300         # integer seconds
+    # an entry may use `oci` instead of `repo` for an OCI-packaged arsenal
 
 # Gawain (framework) — platform tiers only
 spec:
   skills: [shared, coding, operator]
-  arsenal: {}
+  arsenals:
+    - name: platform
 ```
 
 Skills appear read-only under `/skills/<category>/<skill>/`, where the pi-knight

@@ -12,10 +12,10 @@ Search the web via the self-hosted SearXNG metasearch engine. No API keys needed
 
 ```bash
 # Basic search (returns top 5)
-bash scripts/search.sh "your query here"
+bash /skills/shared/web-search/scripts/search.sh "your query here"
 
 # With result count
-bash scripts/search.sh "your query here" 10
+bash /skills/shared/web-search/scripts/search.sh "your query here" 10
 ```
 
 ## Direct API Usage
@@ -31,6 +31,13 @@ curl -s "http://searxng.selfhosted.svc.cluster.local:8080/search?q=QUERY&format=
 - Add `site:github.com` or `site:reddit.com` for source-specific results
 - Results include title, URL, and content snippet
 - No jq available — use grep/sed/cut for JSON parsing
+
+## Network access
+
+Knights run with default-deny egress. The `SEARXNG_URL`'s host (default `searxng.selfhosted.svc.cluster.local`) must be listed in the knight's
+`spec.egress.allowedHosts` (or `allowedServices` for in-cluster services). When a
+request fails the script prints one line, `ERROR: <url>: <reason>`, and exits 1;
+a connection refused, DNS failure or timeout usually means the host is blocked.
 
 ## Scripts
 

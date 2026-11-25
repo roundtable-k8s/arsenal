@@ -12,10 +12,10 @@ Retrieve and extract readable text content from any URL. Useful for reading arti
 
 ```bash
 # Fetch a URL (default 10000 chars max)
-bash scripts/fetch.sh "https://example.com/article"
+bash /skills/shared/web-fetch/scripts/fetch.sh "https://example.com/article"
 
 # With character limit
-bash scripts/fetch.sh "https://example.com/article" 5000
+bash /skills/shared/web-fetch/scripts/fetch.sh "https://example.com/article" 5000
 ```
 
 ## Direct Usage
@@ -31,6 +31,13 @@ curl -sL -A "Knight-Agent/1.0" "https://example.com" \
 - Some sites block automated fetches — the script uses a browser-like User-Agent
 - JavaScript-rendered pages won't work — use the browser skill for those
 - Output is truncated to avoid flooding context
+
+## Network access
+
+Knights run with default-deny egress. The site you fetch must be listed in the knight's
+`spec.egress.allowedHosts` (or `allowedServices` for in-cluster services). When a
+request fails the script prints one line, `ERROR: <url>: <reason>`, and exits 1;
+a connection refused, DNS failure or timeout usually means the host is blocked.
 
 ## Scripts
 
