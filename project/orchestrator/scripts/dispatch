@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# dispatch: build a review, re-review or fix task for a PR, pick the knight,
+# record it in a ledger, and print the message for the agent to send.
+#
+#   dispatch [opts] review|re-review|fix <pr-url> [--note <text>] [--force]
+#   dispatch [opts] --record <taskId> <result-file>
+#   dispatch [opts] --collect
+#
+#   --config   config file (default: $ORCHESTRATOR_CONFIG, else
+#              config.json next to this skill)
+#   --ledger   ledger file (default: $ORCHESTRATOR_STATE_DIR/dispatch.json)
+#   --note     extra sentence appended to the task text
+#   --force    send even if the same kind was already sent for this head
+#              commit, or the PR is not open
+#
+# A knight reaches another knight only through its NATS request tool, so this
+# script does not send anything. It prints one JSON line
+#   {"knight":"<name>","taskId":"<id>","task":"<text>"}
+# for the agent to send with that tool (knight = knight, task = task). When the
+# reply comes back, store it with `dispatch --record <taskId> <file>`.
+# `--collect` prints one line per ledger entry:
+#   <kind> <pr-url> <age> <first line of the result | pending>
+#
+# Targets: review and re-review go to the lead knight (it posts with the
+# pr-review skill's rt-review); fix goes to the knight that owns the PR's
+# repository (the PR's author knight).
+#
+# Config (JSON, shared with scripts/status and scripts/tend; only these fields
+# are read):
+#   leadKnight  knight that reviews
+#   knights     {"owner/name": "<knight>", "*": "<knight>"}: who fixes
+#
+# The ledger is {"entries": [{taskId, kind, pr, repo, number, sha, knight, at,
+# note, result, resultAt}]}. A second dispatch of the same kind for the same
+# PR head commit is refused unless --force.
+# Exit status: 0 ok, 1 refused or failed (said on stderr), 2 usage errors.
+set -uo pipefail
+
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+die() { echo "dispatch: $*" >&2; exit 1; }
+redact() { sed -E 's/(gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}/[redacted]/g; s/(xox[abprs]-|sk-[a-z]*-?)[A-Za-z0-9_-]{16,}/[redacted]/g'; }
+now() { if [ -n "${ORCHESTRATOR_NOW:-}" ]; then echo "$ORCHESTRATOR_NOW"; else date -u +%s; fi; }
+iso() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
+
+here="$(cd "$(dirname "$0")" && pwd)"
+config="${ORCHESTRATOR_CONFIG:-$here/../config.json}"
+ledger="" mode="" kind="" url="" note="" force=0 task_id="" result_file=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --config) [ $# -ge 2 ] || usage; config="$2"; shift 2 ;;
+    --ledger) [ $# -ge 2 ] || usage; ledger="$2"; shift 2 ;;
+    --note) [ $# -ge 2 ] || usage; note="$2"; shift 2 ;;
+    --force) force=1; shift ;;
+    --record) [ $# -ge 3 ] && [ -z "$mode" ] || usage; mode=record; task_id="$2"; result_file="$3"; shift 3 ;;
+    --collect) [ -z "$mode" ] || usage; mode=collect; shift ;;
+    review|re-review|fix)
+      [ -z "$mode" ] && [ $# -ge 2 ] || usage; mode=send; kind="$1"; url="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    *) echo "dispatch: unknown argument '$1'" >&2; usage ;;
+  esac
+done
+[ -n "$mode" ] || usage
+if [ -z "$ledger" ]; then
+  [ -n "${ORCHESTRATOR_STATE_DIR:-}" ] \
+    || { echo "dispatch: no ledger: pass --ledger <file> or set ORCHESTRATOR_STATE_DIR" >&2; exit 2; }
+  ledger="$ORCHESTRATOR_STATE_DIR/dispatch.json"
+fi
+
+# --- ledger -----------------------------------------------------------------
+if [ -e "$ledger" ]; then
+  jq -e 'type == "object" and (.entries | type == "array")' "$ledger" >/dev/null 2>&1 \
+    || { echo "dispatch: ledger '$ledger' is not a {\"entries\": [...]} JSON object; fix or remove it" >&2; exit 2; }
+  L="$(cat "$ledger")"
+else
+  L='{"entries":[]}'
+fi
+save() {
+  mkdir -p "$(dirname "$ledger")" && printf '%s\n' "$L" > "$ledger.tmp" && mv "$ledger.tmp" "$ledger" \
+    || die "could not write ledger '$ledger'"
+}
+
+# --- collect ----------------------------------------------------------------
+age() { # seconds -> 45s / 12m / 3h / 2d
+  local s=$1; [ "$s" -lt 0 ] && s=0
+  if [ "$s" -lt 60 ]; then echo "${s}s"; elif [ "$s" -lt 3600 ]; then echo "$((s / 60))m"
+  elif [ "$s" -lt 172800 ]; then echo "$((s / 3600))h"; else echo "$((s / 86400))d"; fi
+}
+if [ "$mode" = collect ]; then
+  [ "$(jq '.entries | length' <<<"$L")" -gt 0 ] || { echo "dispatch: no dispatches recorded"; exit 0; }
+  t="$(now)"
+  while IFS=$'\t' read -r k pr at res; do
+    a="$(age $(( t - $(date -u -d "$at" +%s) )))"
+    if [ -z "$res" ]; then res=pending; fi
+    printf '%s %s %s %s\n' "$k" "$pr" "$a" "$res"
+  done < <(jq -r '.entries[] | [.kind, .pr, .at,
+      (if .result == null then "" else (.result | split("\n") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | .[0] // "(empty reply)") end)]
+      | map(gsub("\t"; " ")) | @tsv' <<<"$L" | redact | cut -c1-400)
+  exit 0
+fi
+
+# --- record -----------------------------------------------------------------
+if [ "$mode" = record ]; then
+  jq -e --arg id "$task_id" 'any(.entries[]; .taskId == $id)' <<<"$L" >/dev/null \
+    || die "no ledger entry with task id '$task_id'"
+  [ -r "$result_file" ] || die "result file '$result_file' not found"
+  res="$(redact < "$result_file")"
+  L="$(jq --arg id "$task_id" --arg r "$res" --arg t "$(iso "$(now)")" \
+    '.entries |= map(if .taskId == $id then .result = $r | .resultAt = $t else . end)' <<<"$L")"
+  save
+  echo "dispatch: recorded result for $task_id"
+  exit 0
+fi
+
+# --- send -------------------------------------------------------------------
+[[ "$url" =~ ^https://github\.com/([^/]+/[^/]+)/pull/([0-9]+)$ ]] \
+  || { echo "dispatch: expected a PR URL like https://github.com/OWNER/REPO/pull/N, got '$url'" >&2; exit 2; }
+repo="${BASH_REMATCH[1]}"; num="${BASH_REMATCH[2]}"
+[ -r "$config" ] || { echo "dispatch: config file '$config' not found (pass --config <file>)" >&2; exit 2; }
+jq -e 'type == "object"' "$config" >/dev/null 2>&1 \
+  || { echo "dispatch: config file '$config' is not a JSON object" >&2; exit 2; }
+
+if [ "$kind" = fix ]; then
+  knight="$(jq -r --arg r "$repo" '.knights[$r] // .knights["*"] // ""' "$config")"
+  [ -n "$knight" ] || die "no knight for $repo in the config's knights; cannot send a fix"
+else
+  knight="$(jq -r '.leadKnight // ""' "$config")"
+  [ -n "$knight" ] || die "no leadKnight in the config; cannot send a $kind"
+fi
+
+pj="$(gh pr view "$url" --json state,headRefOid 2>&1)" || die "could not read $url ($(head -n 1 <<<"$pj" | redact))"
+sha="$(jq -r '.headRefOid // ""' <<<"$pj")"; state="$(jq -r '.state // ""' <<<"$pj")"
+[ -n "$sha" ] || die "could not read the head commit of $url"
+if [ "$state" != OPEN ] && [ "$force" = 0 ]; then
+  die "$url is $state, not open; not sent (pass --force to send anyway)"
+fi
+
+prev="$(jq -r --arg k "$kind" --arg u "$url" --arg s "$sha" \
+  '[.entries[] | select(.kind == $k and .pr == $u and .sha == $s)] | last | .taskId // ""' <<<"$L")"
+if [ -n "$prev" ] && [ "$force" = 0 ]; then
+  die "$kind for $url at head ${sha:0:7} was already sent (task $prev); not sent again (pass --force to send anyway)"
+fi
+
+reply_review="Reply \"<url> ship it\", \"<url> needs changes\" or \"<url> blocked: <reason>\"."
+case "$kind" in
+  review)
+    task="Review $url (head ${sha:0:7}) with the pr-review skill: read the linked issue and the diff, check the tests cover the change, then post your review with rt-review (ship_it or needs_changes). Do not push to the branch. $reply_review" ;;
+  re-review)
+    task="Re-review $url (head ${sha:0:7}) with the pr-review skill: a fix round was pushed after the last review. Check that every point of the previous review is addressed and nothing new broke, then post your review with rt-review (ship_it or needs_changes). Do not push to the branch. $reply_review" ;;
+  fix)
+    task="Address the review on $url (head ${sha:0:7}): read the newest \"Verdict: needs changes\" review and its comments, fix each point on the PR's branch, run the repo's CI commands (see its AGENTS.md), and push. Do not queue, merge or review the PR. Reply \"<url> pushed <sha>\" or \"<url> blocked: <reason>\"." ;;
+esac
+[ -n "$note" ] && task="$task Note from the orchestrator: $note"
+
+t="$(now)"
+task_id="$kind-${repo##*/}-$num-${sha:0:7}-$t"
+i=1; base="$task_id"
+while jq -e --arg id "$task_id" 'any(.entries[]; .taskId == $id)' <<<"$L" >/dev/null; do
+  i=$((i + 1)); task_id="$base-$i"
+done
+
+L="$(jq --arg id "$task_id" --arg k "$kind" --arg u "$url" --arg r "$repo" --argjson n "$num" \
+  --arg s "$sha" --arg kn "$knight" --arg t "$(iso "$t")" --arg note "$note" \
+  '.entries += [{taskId: $id, kind: $k, pr: $u, repo: $r, number: $n, sha: $s, knight: $kn,
+     at: $t, note: (if $note == "" then null else $note end), result: null, resultAt: null}]' <<<"$L")"
+save
+jq -nc --arg k "$knight" --arg id "$task_id" --arg t "$task" '{knight: $k, taskId: $id, task: $t}'

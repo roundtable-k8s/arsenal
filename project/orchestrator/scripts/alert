@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# alert: post a short "blocked, needs the owner" message to an ntfy topic.
+#
+#   alert <message...>      (or `alert -` to read the message from stdin)
+#
+# Environment:
+#   NTFY_URL     ntfy server base URL, e.g. https://ntfy.example.org
+#   NTFY_TOPIC   topic to post to
+#   NTFY_TOKEN   optional access token (sent as a Bearer header, never printed)
+#   NTFY_TITLE   optional title (default: "Round Table: needs the owner")
+#
+# When NTFY_URL or NTFY_TOPIC is unset, prints one line saying so and exits 0:
+# an unconfigured alert is not an error for the check.
+# Exit status: 0 sent or not configured, 1 the post failed, 2 usage errors.
+set -uo pipefail
+
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+case "${1:-}" in ""|-h|--help) usage ;; esac
+if [ "$1" = - ] && [ $# -eq 1 ]; then msg="$(cat)"; else msg="$*"; fi
+[ -n "${msg//[[:space:]]/}" ] || { echo "alert: empty message" >&2; exit 2; }
+
+if [ -z "${NTFY_URL:-}" ] || [ -z "${NTFY_TOPIC:-}" ]; then
+  echo "alert: NTFY_URL/NTFY_TOPIC not set, not sent"
+  exit 0
+fi
+
+hdr="$(mktemp)"; trap 'rm -f "$hdr"' EXIT
+chmod 600 "$hdr"
+{
+  printf 'Title: %s\n' "${NTFY_TITLE:-Round Table: needs the owner}"
+  printf 'Tags: warning\n'
+  # The token goes through a header file so it is not on curl's command line.
+  [ -n "${NTFY_TOKEN:-}" ] && printf 'Authorization: Bearer %s\n' "$NTFY_TOKEN"
+} > "$hdr"
+
+if printf '%s' "$msg" | curl -fsS -o /dev/null --max-time 20 -X POST -H "@$hdr" \
+     --data-binary @- "${NTFY_URL%/}/$NTFY_TOPIC" 2>/dev/null; then
+  echo "alert: sent to topic $NTFY_TOPIC"
+else
+  rc=$?
+  echo "alert: not sent to topic $NTFY_TOPIC (curl exit $rc)" >&2
+  exit 1
+fi
