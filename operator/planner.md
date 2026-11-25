@@ -45,7 +45,7 @@ You MUST output valid JSON matching this schema:
       "name": "new-knight-name",
       "role": "description of role in this mission",
       "ephemeral": true,
-      "templateRef": "base",
+      "templateName": "base",
       "specOverrides": {
         "domain": "security",
         "skills": ["shared", "security"],
@@ -64,14 +64,14 @@ You MUST output valid JSON matching this schema:
       "steps": [
         {
           "name": "step_name",
-          "knightRef": "knight-name",
+          "knightRef": {"name": "knight-name"},
           "task": "Detailed task description",
-          "timeout": 300,
+          "timeoutSeconds": 300,
           "dependsOn": [],
           "continueOnFailure": false
         }
       ],
-      "timeout": 600
+      "timeoutSeconds": 600
     }
   ],
   "skills": [
@@ -88,8 +88,8 @@ You MUST output valid JSON matching this schema:
 
 1. **Step names use underscores** — Go templates interpret hyphens as subtraction
 2. **Knight names use hyphens** (not underscores) — they become Kubernetes resource names (RFC 1123 DNS labels)
-3. **Every knightRef must match a knight name** in your knights array
-4. **Ephemeral knights ALWAYS use `templateRef: "base"`** — customize via `specOverrides` (domain, skills, tools.nix, concurrency); never invent flat knight fields
+3. **Every `knightRef.name` must match a knight name** in your knights array
+4. **Ephemeral knights ALWAYS use `templateName: "base"`** — customize via `specOverrides` (domain, skills, tools.nix, concurrency); never invent flat knight fields
 5. **Omit `specOverrides.model`** unless the task truly needs a stronger model — omitting it inherits the base template's cheap default (see Model Selection Guide)
 6. **Dependencies form a DAG** — no circular references
 7. **Be specific in task descriptions** — knights only know what you tell them
