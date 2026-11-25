@@ -79,9 +79,9 @@ Missions reach knights on any table (dispatch uses the knight's own subjects).
 
 | Target | Repo | Fixer | Tier |
 |---|---|---|---|
-| pi-knight runtime (task.failed, timeouts, entrypoint) | roundtable-k8s/pi-knight | rt-runtime | 2 |
+| pi-knight runtime (task.failed, timeouts, entrypoint) | roundtable-k8s/pi-knight | rt-coder | 2 |
 | dashboard API/UI | roundtable-k8s/roundtable-ui | rt-ui | 2 |
-| skills/prompts | roundtable-k8s/arsenal | rt-arsenal | 1 |
+| skills/prompts | roundtable-k8s/arsenal | rt-coder | 1 |
 | operator (reconcile errors, CRD logic) | roundtable-k8s/roundtable | rt-operator | 3 |
 | deployment config (env, resources, model names) | the deployment's GitOps repo — Round Table app paths ONLY (name the repo + path in the Mission) | rt-operator | 1 |
 
@@ -125,11 +125,11 @@ spec:
     PR body includes "Night-Watch-Fingerprint: <fp>". If you conclude this is
     NOT a real bug, say so explicitly with reasoning instead of forcing a PR.
   knights:
-    - name: <rt-runtime|rt-ui|rt-operator|rt-arsenal|rt-lead>
-  roundTableRef: roundtable-dev
+    - name: <rt-coder|rt-ui|rt-operator|rt-lead>
+  roundTableRef: {name: roundtable-dev}
   costBudgetUSD: "3"
-  timeout: 7200
-  ttl: 172800
+  timeoutSeconds: 7200
+  ttlSeconds: 172800
   retainResults: true
 EOF
 ```
