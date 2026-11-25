@@ -33,6 +33,15 @@ want="ship it"; [ "$verdict" = needs_changes ] && want="needs changes"
 
 problems=(); ok=()
 add_problem() { problems+=("$1"); }
+# First non-blank line of a failed command's output, token-like strings removed,
+# ';' replaced (problems are joined with ';'), trimmed to 200 characters.
+merge_reason() {
+  local r
+  r="$(printf '%s\n' "$1" | sed -n '/[^[:space:]]/{p;q}' \
+       | sed -E 's/(gh[pousr]_|github_pat_)[A-Za-z0-9_]+/[redacted]/g; s/[A-Za-z0-9_+\/=-]{32,}/[redacted]/g; s/;/,/g; s/^[[:space:]]+//; s/[[:space:]]+$//' \
+       | cut -c1-200)"
+  printf '%s' "${r:-no reason given}"
+}
 
 for url in "$@"; do
   if ! [[ "$url" =~ ^https://github\.com/[^/]+/[^/]+/pull/[0-9]+$ ]]; then
@@ -62,10 +71,14 @@ for url in "$@"; do
     add_problem "$url: no ship-it verdict; not queued"; continue
   fi
   if [ "$(jq -r '.autoMergeRequest != null' <<<"$pr")" = true ]; then ok+=("$url queued"); continue; fi
-  if gh pr merge "$url" --auto --squash >/dev/null 2>&1; then
+  if mout="$(gh pr merge "$url" --auto --squash 2>&1)"; then
+    ok+=("$url queued")
+  elif grep -qiE 'already.*merged' <<<"$mout"; then
+    ok+=("$url merged")
+  elif grep -qiE 'already.*(queue|enabled)' <<<"$mout"; then
     ok+=("$url queued")
   else
-    add_problem "$url: could not enable auto-merge"
+    add_problem "$url: could not enable auto-merge ($(merge_reason "$mout"))"
   fi
 done
 [ $# -gt 0 ] || add_problem "no PR URL"
