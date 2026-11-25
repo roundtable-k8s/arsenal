@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Checks project/orchestrator/SKILL.md and reference/issue-format.md: frontmatter,
+# the procedure order, the limits (word for word from the orchestrator epic),
+# the issue format sections, and no environment-specific names.
+set -uo pipefail
+here="$(cd "$(dirname "$0")/.." && pwd)"
+skill="$here/SKILL.md"; fmt="$here/reference/issue-format.md"
+pass=0; fail=0
+ok()  { pass=$((pass + 1)); echo "  ok   $1"; }
+bad() { fail=$((fail + 1)); echo "  FAIL $1"; }
+check() { local d="$1"; shift; if "$@"; then ok "$d"; else bad "$d"; fi; }
+
+[ -r "$skill" ] && [ -r "$fmt" ] || { echo "missing SKILL.md or reference/issue-format.md"; exit 1; }
+
+# Frontmatter: the fields validate-skills reads.
+front="$(awk 'NR==1 && $0=="---"{f=1; next} f && $0=="---"{exit} f' "$skill")"
+check "frontmatter name is orchestrator" grep -qx 'name: orchestrator' <<<"$front"
+check "frontmatter has a description" grep -q '^description:' <<<"$front"
+
+# Procedure steps in order.
+steps="$(grep -E '^### [0-9]+\. ' "$skill" | sed -E 's/^### [0-9]+\. //')"
+check "procedure: status, tend, dispatch, feed, decide, log" \
+  test "$(tr '\n' ',' <<<"$steps")" = "Status,Tend,Dispatch follow-ups,Feed,Decide,Log,"
+
+# Rules the procedure must state.
+check "feed threshold (about eight)" grep -q 'fewer than about eight' "$skill"
+check "feed writes two to four issues" grep -q 'two to four' "$skill"
+check "feed links the issue format" grep -q 'reference/issue-format.md' "$skill"
+check "decide comment format" grep -q 'Decided <YYYY-MM-DD> (orchestrator)' "$skill"
+check "decide leaves taste to the owner" grep -q 'product-direction and taste questions' "$skill"
+check "log is 3-8 lines" grep -q '3–8 plain lines' "$skill"
+for s in status tend dispatch alert; do
+  check "names scripts/$s" grep -q "\$S/$s" "$skill"
+done
+for s in project/pr-review project/pr-postrun project/github-pm; do
+  check "points to $s" grep -q "$s" "$skill"
+done
+
+# Limits: word for word from the epic's "What it must never do".
+limits="Handle credential values or create credentials; grant itself or any knight permissions; delete data or repositories; restart nodes or touch node configuration; start or copy pipeline chains by hand; reword someone else's issue to get it past pickup; add approval gates; expose anything outside the cluster. If one of its own changes breaks the factory, it reverts first and investigates after."
+check "limits verbatim" grep -qxF "$limits" "$skill"
+
+# Issue format: the three rules and the sections, in order.
+for r in 'One pull request, testable, no human decision needed.' \
+         'Verified against the code:' 'Additive and safe:'; do
+  check "issue rule: $r" grep -qF "$r" "$fmt"
+done
+sections="$(sed -n '/^```$/,/^```$/p' "$fmt" | grep -E '^## ' | tr '\n' ',')"
+check "issue sections in order" \
+  test "$sections" = "## Goal,## Context,## Tasks,## Acceptance criteria,## Out of scope,"
+check "issue format starts with Part of #<epic>" grep -q '^Part of #<epic>' "$fmt"
+check "conventional titles" grep -q 'feat(scope)' "$fmt"
+
+# Nothing environment-specific: no workstation paths, cluster or personal names.
+for f in "$skill" "$fmt"; do
+  check "no workstation paths in ${f#$here/}" bash -c '! grep -qE "(/home/|/Users/|~/)" "$1"' _ "$f"
+  check "no cluster or person names in ${f#$here/}" bash -c '! grep -qiE "dapper|derek|merlin|nats-box" "$1"' _ "$f"
+done
+
+echo "$pass passed, $fail failed"
+[ "$fail" -eq 0 ]
