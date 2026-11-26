@@ -239,6 +239,14 @@ run "$status" --config "$skill/config.example.json"
 q '.cluster.operator == null and .cluster.podsNotRunning == null and ([.errors[].section] | index("cluster.operator") != null)'
 check "pods forbidden: operator null plus errors entry" $?
 
+# ---- operator container not running (crash loop) ----
+fixtures
+jq '(.items[] | select(.metadata.name == "rt-operator-abc") | .status.containerStatuses) |= map(.ready = false | .state = {waiting:{reason:"CrashLoopBackOff"}})' "$FIX/k8s/pods.json" > "$work/pods-crash.json" && mv "$work/pods-crash.json" "$FIX/k8s/pods.json"
+run "$status" --config "$skill/config.example.json"
+[ $rc -eq 0 ] && valid; check "operator crash-looping: exits 0 and validates" $?
+q '.cluster.operator == {podName:"rt-operator-abc",startedAt:"2026-01-03T08:00:00Z",restarts:2}'
+check "operator crash-looping: startedAt falls back to the pod start time" $?
+
 # ---- snapshot without the new fields ----
 fixtures; run "$status" --config "$skill/config.example.json"
 jq 'del(.cluster.operator) | .cluster.chains.Running |= map(del(.runningSteps))' <<<"$out" > "$work/old.json"

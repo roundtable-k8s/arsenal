@@ -185,7 +185,7 @@ else
     operator="$(jq -c '[.items[] | select(.metadata.labels["app.kubernetes.io/name"] == "roundtable-operator")]
       | sort_by(.metadata.creationTimestamp) | last // null
       | if . == null then null else {podName: .metadata.name,
-          startedAt: ([.status.containerStatuses[]? | .state.running.startedAt // empty] | max
+          startedAt: (([.status.containerStatuses[]? | .state.running.startedAt // empty] | max)
                        // .status.startTime // .metadata.creationTimestamp // null),
           restarts: ([.status.containerStatuses[]? | .restartCount // 0] | add // 0)} end' "$tmp/pods")"
     [ "$operator" != null ] || error cluster.operator "no pod with label app.kubernetes.io/name=roundtable-operator"

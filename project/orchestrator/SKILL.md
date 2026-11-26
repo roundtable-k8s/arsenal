@@ -42,13 +42,13 @@ not read is `null` with an entry in `errors`: say so in the log, do not guess.
 
 In-flight work: a step in `runningSteps` whose `startedAt` is before
 `cluster.operator.startedAt` (when the operator process last started, also
-after an in-place container restart) was in flight across an operator restart and can
-show no progress for a while. At first sight do not dispatch, requeue or alert
-on it; note `chain/taskId` in the log line `in flight:`. Treat it as stuck only
-when the same `taskId` is still running at the next check. `pickedUpAt: null`
-means no knight has picked the step up yet; phase `Deferred` means it waits
-for plan quota, so it is waiting, not stuck (the step timeout counts from
-pickup). If `cluster.operator` is `null`, you cannot tell: say so in the log.
+after an in-place container restart) was in flight across an operator
+restart and can show no progress for a while. At first sight do not dispatch,
+requeue or alert on it; note `chain/taskId` in the log line `in flight:`. Treat
+it as stuck only when the same `taskId` is still running at the next check.
+`pickedUpAt: null` means no knight has picked the step up yet; phase
+`Deferred` means it waits for plan quota, so it is waiting, not stuck (the
+step timeout counts from pickup). If `cluster.operator` is `null`, you cannot tell: say so in the log.
 
 Everything below reads this snapshot. Re-run `status` only after you changed
 something and need to see the result.
