@@ -142,6 +142,8 @@ These patterns never auto-decay:
 - Legal/tax deadlines with fixed statutory due dates
 - Items the user explicitly set `notes` to contain `"decay: false"`
 
+The script only recognises `cve-` ids and `decay: false` as immune. For active infrastructure failures and legal/tax deadlines, add `decay: false` to the item's `notes` when you create it, or `--apply` will auto-resolve it at 14 days.
+
 ### Decay reporting
 When staleness auto-resolves an item, list it in your summary's
 `resolved` array so the synthesizer can print it as ✅ RESOLVED:
@@ -152,9 +154,26 @@ When staleness auto-resolves an item, list it in your summary's
 Decay is a cleanup mechanism, not a bug fix. The item didn't get solved —
 it just stopped being worth daily attention.
 
+## Checking the ledger
+
+`scripts/ledger-check <ledger.json> [--today YYYY-MM-DD] [--apply]` validates the
+file (stderr, exit 1 on problems), prints one line per open item
+(`<id> day=<N|none> last_verified_age=<N> action=<keep|downgrade|resolve-7d|resolve-14d|resolve-30d|reverify>`)
+and, with `--apply`, writes the decay results from the rules above through a temp
+file and `mv`. Run it before writing the report and after editing the file. Do not
+compute Day-N by hand. It does not re-verify items; running `verification.command`
+stays with you. A downgrade adds `[downgraded YYYY-MM-DD]` to `notes`, so a second
+`--apply` on the same day changes nothing.
+
 ## Finishing
 
 - Update `meta.last_report` to today when you write your vault report.
 - Your summary must agree with the ledger: every `RESOLVED:` bullet matches
   an item resolved today; every carried item is `open` with
   `last_verified` = today (or explicitly `[unverified]`).
+
+## Tests
+
+```bash
+bash shared/open-items-ledger/tests/test.sh
+```

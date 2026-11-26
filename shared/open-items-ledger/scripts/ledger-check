@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Validate an open-items ledger, compute Day-N counters and apply the decay rules.
+#   ledger-check <ledger.json> [--today YYYY-MM-DD] [--apply]
+# Prints one line per open item:
+#   <id> day=<N|none> last_verified_age=<N> action=<keep|downgrade|resolve-7d|resolve-14d|resolve-30d|reverify>
+# Actions (first match wins): immune (id "cve-*" or notes containing "decay: false") -> keep;
+# first_seen >= 30 days -> resolve-30d; >= 14 -> resolve-14d; last_verified >= 7 days old and no
+# verification command -> resolve-7d when severity is low, else downgrade; last_verified > 2 days
+# old -> reverify (also a today-downgraded item, never silently kept); otherwise keep.
+# --apply writes the decay results through a temp file and mv (never reopens a resolved item) and
+# prints "ledger-check: applied <n> change(s)". A downgrade appends "[downgraded YYYY-MM-DD]" to
+# notes so a second --apply on the same day changes nothing. Without --apply the file is not written.
+# Exit codes: 0 ok, 1 invalid ledger, 2 bad arguments.
+set -euo pipefail
+
+usage() {
+  echo "usage: ledger-check <ledger.json> [--today YYYY-MM-DD] [--apply]" >&2
+  exit 2
+}
+
+[ $# -ge 1 ] || usage
+file="$1"; shift
+today=""; apply=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --today) [ $# -ge 2 ] || usage; today="$2"; shift 2 ;;
+    --apply) apply=1; shift ;;
+    *) usage ;;
+  esac
+done
+[ -n "$today" ] || today="$(date -u +%Y-%m-%d)"
+[[ "$today" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && date -u -d "$today" +%Y-%m-%d >/dev/null 2>&1 || usage
+[ "$(date -u -d "$today" +%Y-%m-%d)" = "$today" ] || usage
+
+if [ ! -f "$file" ]; then echo "ledger-check: $file not found" >&2; exit 1; fi
+if ! jq -e 'type == "object" and (.items | type == "array")' "$file" >/dev/null 2>&1; then
+  echo "ledger-check: $file is not a JSON object with an items array" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC2016
+common='
+def isdate: type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+  and (try (strptime("%Y-%m-%d") | mktime | strftime("%Y-%m-%d")) catch "") == .;
+def epoch: strptime("%Y-%m-%d") | mktime;
+def days($d): (($today | epoch) - (. | epoch)) / 86400 | floor;
+def immune: (.id | startswith("cve-")) or ((.notes // "") | contains("decay: false"));
+def marker: "[downgraded \($today)]";
+def plan:
+  if immune then "keep"
+  elif .first_seen != null and (.first_seen | days($today)) >= 30 then "resolve-30d"
+  elif .first_seen != null and (.first_seen | days($today)) >= 14 then "resolve-14d"
+  elif (.last_verified | days($today)) >= 7 and ((.verification // null) == null or (.verification.command // "") == "") then
+    (if ((.notes // "") | contains(marker)) then "reverify"
+     elif .severity == "low" then "resolve-7d"
+     else "downgrade" end)
+  elif (.last_verified | days($today)) > 2 then "reverify"
+  else "keep" end;
+'
+
+# ---- validation ----
+# shellcheck disable=SC2016
+problems="$(jq -r --arg today "$today" "$common"'
+  [.items | to_entries[] | .key as $i | .value as $it |
+    (if ($it | type) != "object" then "item \($i): not an object"
+     else
+       ($it.id // null) as $id | "item \($id // $i)" as $p |
+       (if ($id | type) != "string" or $id == "" then "item \($i): missing id" else empty end),
+       (if ($it.claim | type) != "string" or $it.claim == "" then "\($p): missing claim" else empty end),
+       (if ["low","medium","high"] | index($it.severity) | not then "\($p): severity must be low|medium|high" else empty end),
+       (if ["open","resolved"] | index($it.status) | not then "\($p): status must be open|resolved" else empty end),
+       (if ($it.first_seen != null) and (($it.first_seen | isdate) | not) then "\($p): first_seen must be null or YYYY-MM-DD" else empty end),
+       (if ($it.resolved_on != null) and (($it.resolved_on | isdate) | not) then "\($p): resolved_on must be null or YYYY-MM-DD" else empty end),
+       (if (($it.last_verified | isdate) | not) then "\($p): last_verified must be YYYY-MM-DD" else empty end),
+       (if $it.status == "resolved" and $it.resolved_on == null then "\($p): resolved item has no resolved_on" else empty end),
+       (if $it.status == "open" and $it.resolved_on != null then "\($p): open item must have resolved_on null" else empty end)
+     end)] +
+  ([.items[] | select(type == "object") | .id | select(type == "string")] | group_by(.) | map(select(length > 1) | "duplicate id \(.[0])"))
+  | .[]' "$file")"
+if [ -n "$problems" ]; then
+  printf '%s\n' "$problems" >&2
+  exit 1
+fi
+
+# ---- report ----
+# shellcheck disable=SC2016
+jq -r --arg today "$today" "$common"'
+  .items[] | select(.status == "open") |
+  "\(.id) day=\(if .first_seen == null then "none" else (.first_seen | days($today)) end) last_verified_age=\(.last_verified | days($today)) action=\(plan)"' "$file"
+
+[ "$apply" -eq 1 ] || exit 0
+
+# ---- apply ----
+tmp="$(mktemp "$(dirname "$file")/.ledger-check.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+# shellcheck disable=SC2016
+jq --arg today "$today" "$common"'
+  def lower: if . == "high" then "medium" else "low" end;
+  def stripmarker: sub(" ?\\[downgraded [0-9-]+\\]$"; "");
+  .items |= map(
+    if .status != "open" then .
+    else plan as $a |
+      if $a == "downgrade" then .severity |= lower | .notes = (((.notes // "") | stripmarker) + " " + marker | ltrimstr(" "))
+      elif $a == "resolve-7d" then .status = "resolved" | .resolved_on = $today | .notes = "auto-resolved: low-severity item unverified for 7+ days"
+      elif $a == "resolve-14d" then .status = "resolved" | .resolved_on = $today | .notes = "auto-resolved: 14-day staleness threshold (last_verified \(.last_verified))"
+      elif $a == "resolve-30d" then .status = "resolved" | .resolved_on = $today | .notes = "auto-resolved: 30-day hard cap (last_verified \(.last_verified))"
+      else . end
+    end)' "$file" > "$tmp"
+changes="$(jq -n --slurpfile a "$file" --slurpfile b "$tmp" '[range(0; $a[0].items | length) | select($a[0].items[.] != $b[0].items[.])] | length')"
+if [ "$changes" -gt 0 ]; then
+  chmod --reference="$file" "$tmp" 2>/dev/null || true
+  mv "$tmp" "$file"
+fi
+echo "ledger-check: applied $changes change(s)"
