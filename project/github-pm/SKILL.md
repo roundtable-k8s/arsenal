@@ -14,7 +14,7 @@ Always pass `--repo owner/name` explicitly; do not rely on the working directory
 
 - `roundtable-k8s/roundtable` — operator, CRDs, Helm chart, roadmap epics
 - `roundtable-k8s/roundtable-ui` — dashboard (React + Go API)
-- `roundtable-k8s/knights` — knight definitions
+- `roundtable-k8s/knights` — TypeScript knight runtimes monorepo (pi-knight, claude-knight, shared core)
 - `roundtable-k8s/arsenal` — knight skills (this repo)
 
 ## Milestones
