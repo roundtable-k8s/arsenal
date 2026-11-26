@@ -189,7 +189,7 @@ else
   if "$kubectl" -n "$namespace" get events --field-selector reason=IssuePickupHeld -o json > "$tmp/events" 2>"$tmp/err"; then
     held="$(jq -c '(now - 900 | todate) as $since | [.items[]
         | select(.reason == "IssuePickupHeld" and (.involvedObject.kind // "RoundTable") == "RoundTable")
-        | {table: (.involvedObject.name // null), message: (.message // ""), count: (.count // 1),
+        | {table: (.involvedObject.name // null), message: (.message // ""), count: ([.count // 1, 1] | max),
            lastSeen: (.lastTimestamp // .eventTime // .metadata.creationTimestamp)}
         | select(.lastSeen != null and .lastSeen >= $since)]
       | sort_by(.lastSeen) | reverse' "$tmp/events")"

@@ -27,7 +27,13 @@
 #            Prints `tend: dispatch-needed {"kind":"fix-check",...}` asking the
 #            repository's knight to push a fix to the same branch. Checks whose
 #            failed log is an infrastructure failure (see rerun) are left to
-#            rerun. Once per head commit. Needs `timeout` (coreutils).
+#            rerun and remembered per head commit and check (state kind
+#            `infra`), so their log is not read again. Each failed job's log
+#            (`gh run view --job`, the run when the link has no job id) is read
+#            once per invocation. Once per head commit. Needs `timeout`
+#            (coreutils). (Guard against double work: a `Queued` or `Fixing`
+#            PR feedback entry with no `headSha` counts as the watcher having
+#            the PR's current head; see SKILL.md step 3.)
 #   requeue  Failed pipeline chain (name starts with chainPrefix, created by
 #            issue pickup) whose failed step error is transient (TRANSIENT_*
 #            below), issue still open and not already ready/in progress:
@@ -372,6 +378,7 @@ fi
 # ---- fix-check: approved PRs blocked by a failed required check -------------
 # Reuses the CI patterns above: an infrastructure failure is a re-run (done by
 # the section above), not a fix.
+declare -A logrc logtxt   # failed-job logs read this invocation, keyed run/job
 for repo in "${repos[@]}"; do
   prs="$(gh pr list -R "$repo" --state open --limit 200 \
     --json number,url,isDraft,mergeStateStatus,headRefOid,author)" \
@@ -391,11 +398,24 @@ for repo in "${repos[@]}"; do
       [ -n "$cname" ] || continue
       runid="$(sed -nE 's#.*/actions/runs/([0-9]+).*#\1#p' <<<"$clink")"
       [ -n "$runid" ] || continue
-      rc=0
-      log="$(timeout "$LOG_READ_TIMEOUT" gh run view "$runid" -R "$repo" --log-failed 2>/dev/null)" || rc=$?
-      [ "$rc" -eq 0 ] || continue   # log unreadable: decided next check
+      ikey="$key:$cname"
+      done_already infra "$ikey" && continue   # decided infrastructure for this head: not read again
+      jobid="$(sed -nE 's#.*/actions/runs/[0-9]+/job/([0-9]+).*#\1#p' <<<"$clink")"
+      ck="$runid/$jobid"
+      if [ -z "${logrc[$ck]+x}" ]; then   # read each run/job once per invocation
+        rc=0
+        if [ -n "$jobid" ]; then
+          log="$(timeout "$LOG_READ_TIMEOUT" gh run view "$runid" -R "$repo" --job "$jobid" --log-failed 2>/dev/null)" || rc=$?
+        else
+          log="$(timeout "$LOG_READ_TIMEOUT" gh run view "$runid" -R "$repo" --log-failed 2>/dev/null)" || rc=$?
+        fi
+        logrc[$ck]=$rc; logtxt[$ck]="$log"
+      fi
+      [ "${logrc[$ck]}" -eq 0 ] || continue   # log unreadable: decided next check
+      log="${logtxt[$ck]}"
       msgs="$(sed -E 's/^[^\t]*\t[^\t]*\t//; s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?//' <<<"$log")"
       if ! grep -qiE "$test_re" <<<"$msgs" && grep -qiE "$infra_re" <<<"$msgs"; then
+        record infra "$ikey"   # remembered: not re-read until the head commit changes
         continue   # infrastructure failure: re-run, not a fix
       fi
       step="$(head -n 1 <<<"$log" | awk -F'\t' 'NF >= 2 {print $2}' | redact)"

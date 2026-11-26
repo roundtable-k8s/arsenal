@@ -91,7 +91,9 @@ NATS request tool and `--record` the reply. It refuses a duplicate of the same
 kind for the same head commit: a pending dispatch is waiting, not lost.
 Do not dispatch a `fix` or a rebase for a PR that `cluster.prFeedback` shows in
 phase `Fixing` or `Queued` for the same head commit (`headSha` equals the PR's
-`headSha`): the PR feedback watcher already has it. Do not
+`headSha`): the PR feedback watcher already has it. An entry with no `headSha`
+(`failureHeadSHA` is optional) counts as "the watcher has it" for the PR's
+current head. Do not
 re-send it unless `--collect` shows it older than an hour with no reply.
 Pipeline post-run steps belong to the chain (`project/pr-postrun`); never run
 them yourself.
