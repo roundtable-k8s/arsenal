@@ -6,13 +6,62 @@ description: >
 
 # GitHub Project Management
 
-You manage the `roundtable-k8s/roundtable` repository roadmap using the `gh` CLI.
+You manage the issues, PRs and roadmap of the Round Table repositories using the `gh` CLI.
 
-## Repository
+## Repositories
 
-- **Repo:** `roundtable-k8s/roundtable`
-- **Milestones:** v1.0 (Knight Management), v2.0 (Chain & Orchestration), v3.0 (UI & Special Teams)
-- **Labels:** crd, operator, ui, chain, knight, infra, epic
+Always pass `--repo owner/name` explicitly; do not rely on the working directory.
+
+- `roundtable-k8s/roundtable` — operator, CRDs, Helm chart, roadmap epics
+- `roundtable-k8s/roundtable-ui` — dashboard (React + Go API)
+- `roundtable-k8s/knights` — knight definitions
+- `roundtable-k8s/arsenal` — knight skills (this repo)
+
+## Milestones
+
+Milestones are per repository and change over time, so do not hard-code them.
+List the open ones before you set one:
+
+```bash
+gh api repos/roundtable-k8s/roundtable/milestones --paginate \
+  --jq '.[] | select(.state=="open") | .title'
+```
+
+Use the exact title returned in `--milestone "<title>"`. Closed milestones are
+not valid targets for new work.
+
+## Labels
+
+Check the live set with `gh label list --repo <owner/name>`. The labels this
+skill uses, in `roundtable-k8s/roundtable`:
+
+Topic labels (what the issue is about):
+- `crd` — Custom Resource Definition work
+- `operator` — operator controller changes
+- `ui` — dashboard and visualization
+- `chain` — multi-knight orchestration
+- `knight` — individual knight configuration
+- `infra` — infrastructure and deployment
+- `epic` — large feature spanning multiple issues
+- `observability` — traces, metrics, logs
+- `runtime` — knight runtime backends and sandboxing
+- `security` — security hardening
+- `refactor` — code quality and architecture improvements
+
+Factory labels (they drive the automation; see below):
+- `rt:ready` — ready to be picked up: a knight builds the issue when it is queued
+- `rt:in-progress` — a chain is working on the issue (set by the factory)
+- `groomed` — rewritten to the loop-ready shape: goal, tasks, acceptance criteria
+- `needs-human` — knights stop here; a human decides
+- `hold` — do not merge: needs a human to sequence it
+- `breaking` — breaking change (CRD field or API removal)
+- `product-direction` — needs the owner to set product direction
+- `parked` — idea kept for later; not on the roadmap
+
+When you create an issue, write it in the format from
+`project/orchestrator/reference/issue-format.md`, set a milestone from the open
+list, and add `groomed`. Add `rt:ready` only when the task says so. Do not add
+`rt:in-progress`; the factory sets it.
 
 ## Common Commands
 
@@ -23,8 +72,8 @@ gh issue list --repo roundtable-k8s/roundtable
 # View issue details
 gh issue view 8 --repo roundtable-k8s/roundtable
 
-# Create issue
-gh issue create --repo roundtable-k8s/roundtable --title "Title" --body "Description" --label chain --milestone "v2.0 - Chain & Orchestration"
+# Create issue (<milestone> from the open list above; <label> from the label list)
+gh issue create --repo roundtable-k8s/roundtable --title "Title" --body "Description" --label <label> --milestone "<milestone>"
 
 # Comment on issue
 gh issue comment 8 --repo roundtable-k8s/roundtable --body "Update: ..."
@@ -48,4 +97,3 @@ When completing work related to an issue:
 
 - **Read + Write access** to issues, PRs, contents, projects
 - **Administration: Read only** — can create repos, CANNOT delete them
-- **Always use `--repo roundtable-k8s/roundtable`** — don't assume working directory

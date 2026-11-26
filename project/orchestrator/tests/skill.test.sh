@@ -36,6 +36,12 @@ for s in project/pr-review project/pr-postrun project/github-pm; do
   check "points to $s" grep -q "$s" "$skill"
 done
 
+# github-pm: no hard-coded milestone names (they were retired; read them live).
+gpm="$here/../github-pm/SKILL.md"
+check "github-pm exists" [ -r "$gpm" ]
+check "github-pm names no retired v1.0/v2.0/v3.0 milestones" \
+  bash -c '! grep -qE "v[123]\.0" "$1"' _ "$gpm"
+
 # Limits: word for word from the epic's "What it must never do".
 limits="Handle credential values or create credentials; grant itself or any knight permissions; delete data or repositories; restart nodes or touch node configuration; start or copy pipeline chains by hand; reword someone else's issue to get it past pickup; add approval gates; expose anything outside the cluster. If one of its own changes breaks the factory, it reverts first and investigates after."
 check "limits verbatim" grep -qxF "$limits" "$skill"
