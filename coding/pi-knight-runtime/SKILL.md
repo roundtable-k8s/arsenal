@@ -47,6 +47,18 @@ npm test --workspace packages/pi-knight   # one package
 
 Run typecheck, test and lint before pushing.
 
+## If a test fails only in the pod
+
+The pod sets variables that a developer machine and CI do not (`KNIGHT_NAME`, `NATS_*`, `ROUNDTABLE_TABLE`, `KNIGHT_MODEL`, `KNIGHT_DATA_DIR`, `MAX_CONCURRENT_TASKS`). Before changing any code:
+
+1. Run the failing test again with a clean environment, keeping only what the toolchain needs:
+   ```bash
+   env -i PATH="$PATH" HOME="$HOME" npm test --workspace packages/<pkg>
+   ```
+2. If it now passes, the test depends on the pod's ambient variables. Compare `env | sort` with what the test and its source read (`grep -rn "process.env" <test and source files>`), then fix the test so it sets or clears the variables it reads itself. Never fix it by unsetting variables in product code.
+3. If it still fails, it is a real failure: debug it as usual.
+4. Name in the PR body the variables that made the difference.
+
 ## NATS and the task contract
 
 - Knights consume tasks from JetStream WorkQueue streams; stream names and prefix come from env (`NATS_TASKS_STREAM`, `NATS_RESULTS_STREAM`, `NATS_RESULTS_PREFIX`).
