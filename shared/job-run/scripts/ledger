@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# Append to, or read from, a per-job run ledger (a JSON array file).
+#   ledger append <ledger.json> <job> <status> [--items N] [--note TEXT] [--date YYYY-MM-DD]
+#   ledger last <ledger.json> [job]
+# Entries are {"job","date","status","items","note"}; date defaults to today (UTC),
+# items is null unless --items is given. The newest 200 entries are kept.
+# append writes through a temp file in the same directory and mv, so the ledger is
+# never left half-written. Last line of append: "ledger: ok ...".
+# Exit codes: 0 ok, 1 runtime error (corrupt ledger is left untouched), 2 bad arguments.
+set -euo pipefail
+
+usage() {
+  echo "usage: ledger append <ledger.json> <job> <status> [--items N] [--note TEXT] [--date YYYY-MM-DD]" >&2
+  echo "       ledger last <ledger.json> [job]" >&2
+  exit 2
+}
+
+corrupt() {
+  echo "ledger: $1 is not a JSON array; left untouched" >&2
+  exit 1
+}
+
+# Print the ledger contents (or "[]" when the file does not exist) after validating them.
+read_ledger() {
+  local file="$1" old='[]'
+  if [ -e "$file" ]; then
+    old="$(cat "$file")"
+    printf '%s' "$old" | jq -e 'type == "array"' >/dev/null 2>&1 || corrupt "$file"
+  fi
+  printf '%s' "$old"
+}
+
+append() {
+  [ $# -ge 3 ] || usage
+  local file="$1" job="$2" status="$3" items="" note="" date=""
+  shift 3
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --items) [ $# -ge 2 ] || usage; items="$2"; shift 2 ;;
+      --note)  [ $# -ge 2 ] || usage; note="$2"; shift 2 ;;
+      --date)  [ $# -ge 2 ] || usage; date="$2"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$job" ] && [ -n "$status" ] || usage
+  if [ -n "$items" ] && ! [[ "$items" =~ ^[0-9]+$ ]]; then usage; fi
+  [ -n "$date" ] || date="$(date -u +%F)"
+  if ! [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then usage; fi
+
+  local dir items_json entry old new tmp
+  dir="$(dirname -- "$file")"
+  if [ ! -d "$dir" ]; then
+    echo "ledger: directory does not exist: $dir" >&2
+    exit 1
+  fi
+  if [ -n "$items" ]; then items_json="$items"; else items_json="null"; fi
+
+  old="$(read_ledger "$file")"
+  entry="$(jq -nc --arg job "$job" --arg date "$date" --arg status "$status" \
+    --arg note "$note" --argjson items "$items_json" \
+    '{job: $job, date: $date, status: $status, items: $items, note: $note}')"
+  new="$(printf '%s' "$old" | jq -c --argjson e "$entry" '. + [$e] | .[-200:]')"
+
+  tmp="$(mktemp "${file}.tmp.XXXXXX")"
+  if ! printf '%s\n' "$new" > "$tmp"; then
+    rm -f "$tmp"
+    echo "ledger: could not write $tmp" >&2
+    exit 1
+  fi
+  mv -f "$tmp" "$file"
+  echo "ledger: ok $file $job $status $date"
+}
+
+last() {
+  [ $# -ge 1 ] && [ $# -le 2 ] || usage
+  local file="$1" job="${2:-}" old found
+  if [ ! -e "$file" ]; then
+    echo "ledger: no ledger at $file" >&2
+    exit 1
+  fi
+  old="$(read_ledger "$file")"
+  found="$(printf '%s' "$old" | jq -c --arg job "$job" \
+    '[.[] | select($job == "" or .job == $job)] | .[-1] // empty')"
+  if [ -z "$found" ]; then
+    echo "ledger: no matching entry in $file" >&2
+    exit 1
+  fi
+  printf '%s\n' "$found"
+}
+
+cmd="${1:-}"
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  append) append "$@" ;;
+  last)   last "$@" ;;
+  *)      usage ;;
+esac
