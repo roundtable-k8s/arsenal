@@ -6,7 +6,7 @@
 # Actions (first match wins): immune (id "cve-*" or notes containing "decay: false") -> keep;
 # first_seen >= 30 days -> resolve-30d; >= 14 -> resolve-14d; last_verified >= 7 days old and no
 # verification command -> resolve-7d when severity is low, else downgrade; last_verified > 2 days
-# old -> reverify; otherwise keep.
+# old -> reverify (also a today-downgraded item, never silently kept); otherwise keep.
 # --apply writes the decay results through a temp file and mv (never reopens a resolved item) and
 # prints "ledger-check: applied <n> change(s)". A downgrade appends "[downgraded YYYY-MM-DD]" to
 # notes so a second --apply on the same day changes nothing. Without --apply the file is not written.
@@ -51,7 +51,7 @@ def plan:
   elif .first_seen != null and (.first_seen | days($today)) >= 30 then "resolve-30d"
   elif .first_seen != null and (.first_seen | days($today)) >= 14 then "resolve-14d"
   elif (.last_verified | days($today)) >= 7 and ((.verification // null) == null or (.verification.command // "") == "") then
-    (if ((.notes // "") | contains(marker)) then "keep"
+    (if ((.notes // "") | contains(marker)) then "reverify"
      elif .severity == "low" then "resolve-7d"
      else "downgrade" end)
   elif (.last_verified | days($today)) > 2 then "reverify"

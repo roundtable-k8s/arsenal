@@ -142,6 +142,8 @@ These patterns never auto-decay:
 - Legal/tax deadlines with fixed statutory due dates
 - Items the user explicitly set `notes` to contain `"decay: false"`
 
+The script only recognises `cve-` ids and `decay: false` as immune. For active infrastructure failures and legal/tax deadlines, add `decay: false` to the item's `notes` when you create it, or `--apply` will auto-resolve it at 14 days.
+
 ### Decay reporting
 When staleness auto-resolves an item, list it in your summary's
 `resolved` array so the synthesizer can print it as ✅ RESOLVED:

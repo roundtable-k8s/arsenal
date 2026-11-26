@@ -91,6 +91,7 @@ run "$C" "$f" --today $T --apply
 [ "$(tail -n 1 <<<"$out")" = "ledger-check: applied 0 change(s)" ]; check "second apply reports 0 changes" $?
 cmp -s "$f" "$work/after1.json"; check "second apply is byte-identical" $?
 run "$C" "$f" --today $T; ! grep -q 'action=\(downgrade\|resolve\)' <<<"$out"; check "no decay actions pending after apply" $?
+line dwn | grep -q 'action=reverify'; check "downgraded item re-run reports reverify, not keep" $?
 [ "$(r day25 .status)" = resolved ] && [ "$(r fresh .status)" = open ]; check "decayed item resolved, fresh item stays open" $?
 
 echo "1..$n"; [ $fails -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
