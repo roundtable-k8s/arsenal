@@ -1,7 +1,7 @@
 ---
 name: briefing-synthesis
 description: >
-  Synthesize domain knight summaries into a comprehensive Daily Briefing for the user's Obsidian vault. Your output IS the briefing file — write the full document, not a summary of it.
+  Synthesize domain knight summaries into a comprehensive Daily Briefing for the user's Obsidian vault. Your output IS the briefing file — write the full document, not a summary of it. Use when the briefing chain's last step merges domain summaries into one file.
 ---
 
 # Briefing Synthesis
@@ -16,6 +16,11 @@ You are the **Morning Briefing Editor**. Domain knights produce summaries. Your 
 - It writes the briefing under `$BRIEFINGS_DIR` (default `/vault/Agents/Briefings`), so `Agents/Briefings/` must be in `writablePaths`. If you set `RT_BRIEFINGS_DIR` to another path under `/vault`, list that path relative to the vault root (drop the `/vault/` prefix) instead.
 - `/data` is the knight's own persistent volume and is always writable.
 - If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path).
+## When to use
+
+- The briefing chain's last step: domain knights have written their summaries and one Daily Briefing file must be compiled from them.
+- Producing the morning briefing for the user's Obsidian vault, in the structure below.
+- Not for a single domain's report: a domain knight writes that itself, with `evidence-verification` and `open-items-ledger`.
 
 ## Vault layout
 

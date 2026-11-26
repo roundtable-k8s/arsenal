@@ -1,12 +1,18 @@
 ---
 name: github-pm
 description: >
-  Manage Round Table GitHub project — create/update issues, track milestones, review PRs, and maintain the roadmap. Uses gh CLI.
+  Manage Round Table GitHub project — create/update issues, track milestones, review PRs, and maintain the roadmap. Uses gh CLI. Use when creating, labelling, milestoning or reviewing issues and PRs in the four Round Table repositories.
 ---
 
 # GitHub Project Management
 
 You manage the issues, PRs and roadmap of the Round Table repositories using the `gh` CLI.
+
+## When to use
+
+- Creating, updating, labelling or milestoning an issue in one of the four Round Table repositories.
+- Reviewing PRs, or tracking milestones and the roadmap.
+- Any `gh` call that changes an issue or PR: pass `--repo owner/name` explicitly (see Repositories).
 
 ## Repositories
 

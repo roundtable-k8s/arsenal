@@ -6,7 +6,7 @@ description: >
   RT_BRIEFINGS_DIR). Replaces prose memory as the
   carry-forward mechanism for tracked items: Day-N counters are computed from
   first_seen, items are re-verified before being carried, and resolutions are
-  recorded machine-readably so they can never be silently lost.
+  recorded machine-readably so they can never be silently lost. Use when producing a daily report or briefing summary for a domain.
 ---
 
 # Open-Items Ledger — Carry-Forward Protocol
@@ -22,6 +22,11 @@ time you produce a daily report or briefing summary.
 - The ledger lives under `$BRIEFINGS_DIR/Ledger` (default `/vault/Agents/Briefings/Ledger`), so `Agents/Briefings/` must be in `writablePaths` for it to be updated. If you set `RT_BRIEFINGS_DIR` to another path under `/vault`, list that path relative to the vault root (drop the `/vault/` prefix) instead.
 - `/data` is the knight's own persistent volume and is always writable.
 - If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path).
+## When to use
+
+- Writing the daily report or briefing summary for your domain: the ledger is read and updated before anything is reported.
+- When an item from a previous run may still be open and must be re-verified before it is carried forward.
+- Not for one-off tasks that track no recurring items.
 
 ## Vault layout
 
