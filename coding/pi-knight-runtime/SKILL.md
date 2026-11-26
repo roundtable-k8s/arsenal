@@ -1,100 +1,68 @@
 ---
 name: pi-knight-runtime
-description: Work within the pi-knight runtime repo (TypeScript/Node). Use when modifying knight runtime, NATS messaging, tools, or the coding agent SDK in roundtable-k8s/pi-knight.
+description: Work within the knights monorepo (TypeScript/Node) that holds the pi-knight and claude-knight runtimes and their shared core. Use when modifying knight runtime, NATS messaging, tools, or the task contract in roundtable-k8s/knights. (Skill name kept as pi-knight-runtime so arsenal links keep working.)
 ---
 
-# pi-knight Runtime Codebase Guide
+# knights Monorepo Codebase Guide (pi-knight, claude-knight, core)
+
+_Last checked against roundtable-k8s/knights @ `491a5e8`. The old standalone `roundtable-k8s/pi-knight` repo is no longer the code home; the container image is still `ghcr.io/roundtable-k8s/pi-knight`._
 
 ## Quick Reference
 
 | Aspect | Detail |
 |--------|--------|
-| Language | TypeScript (ES modules) |
-| Runtime | Node.js 22 |
-| Framework | pi-agent-core + pi-ai + pi-coding-agent (pi.dev SDKs) |
-| NATS | `nats` npm v2.28+ (JetStream) |
-| CI | `npm ci && npm run build`, Docker build+push to GHCR |
-| Image | `ghcr.io/roundtable-k8s/pi-knight:<sha>` |
+| Language | TypeScript (ES modules), npm workspaces |
+| Packages | `packages/core` (`@roundtable/knight-core`), `packages/pi-knight`, `packages/claude-knight` |
+| pi SDKs | `@earendil-works/pi-agent-core`, `pi-ai`, `pi-coding-agent` (pi-knight) |
+| NATS | `@nats-io/*` v3 (jetstream, kv, services, transport-node), in core |
+| Tests | `tsx --test` per package (`tests/` dir) |
+| Image | `ghcr.io/roundtable-k8s/pi-knight:<sha>` (Dockerfile in `packages/pi-knight/`) |
 
 ## Project Layout
 
 ```
-src/
-  index.ts          Entry point — boots knight, connects NATS, starts health server
-  knight.ts         Core knight logic — task handling, tool registration
-  config.ts         Environment-based configuration
-  nats.ts           NATS JetStream consumer/publisher
-  health.ts         HTTP health/readiness endpoints
-  introspect.ts     Knight self-description for operator
-  logger.ts         Structured logging
-  metrics.ts        Prometheus metrics (prom-client)
-  tools/
-    nats.ts         NATS communication tools (knight-to-knight messaging)
-    subagent.ts     Sub-agent spawning tools
-defaults/           Default configuration files
-docs/               Documentation
-examples/           Example configurations
-scripts/            Build/deploy scripts
+packages/core/src/          Shared code: config, NATS (`nats/`), health, metrics, telemetry,
+                            memory, roster, slots, drain, guardrails, introspect, logger,
+                            and the task/result contract (`contract/`)
+packages/pi-knight/src/     pi runtime: index.ts, knight.ts (task handling), config, model,
+                            memory, sessions, spans, result-extraction, task-payload, hooks
+  tools/                    Knight tools (nats.ts, find-knights.ts, browser.ts, subagent.ts)
+packages/claude-knight/src/ Claude Code runtime: cli-runner, hooks, guardrails, mcp-*, sessions, stream
+packages/*/tests/           Tests per package
+scripts/                    Dev scripts
 ```
 
-## Build & Test
+Shared code goes in `packages/core`; work in one package unless the task says otherwise.
+
+## Build & Test (from the repo root, per the repo's AGENTS.md)
 
 ```bash
-npm ci              # Install dependencies
-npm run build       # TypeScript compile (tsc)
-npm run dev         # Watch mode (tsx)
-npm start           # Run compiled output
+npm ci
+npm run build
+npm run typecheck
+npm test
+npm run lint
+npm test --workspace packages/pi-knight   # one package
 ```
 
-**No test suite currently** — `tsc` is the primary validation gate.
+Run typecheck, test and lint before pushing.
 
-## Key Dependencies
+## NATS and the task contract
 
-- `@mariozechner/pi-agent-core` — Base agent framework (tools, context, orchestration)
-- `@mariozechner/pi-ai` — LLM provider abstraction
-- `@mariozechner/pi-coding-agent` — Coding tools (bash, read, write, edit) with inner iteration
-- `@sinclair/typebox` — Runtime type validation
-- `nats` — NATS client for JetStream
-- `prom-client` — Prometheus metrics
-
-## NATS Architecture
-
-- Knights consume tasks from JetStream WorkQueue streams
-- Configurable via env: `NATS_TASKS_STREAM`, `NATS_RESULTS_STREAM`, `NATS_RESULTS_PREFIX`
-- Results published to `<prefix>.<knight-name>.<task-id>`
-- Task payloads: `{taskId, input, context}` → Results: `{task_id, result, success}`
-- **Field name mismatch with operator**: Controller expects `{taskId, output, error}`, pi-knight publishes `{task_id, result, success}`. Getter methods bridge both formats.
+- Knights consume tasks from JetStream WorkQueue streams; stream names and prefix come from env (`NATS_TASKS_STREAM`, `NATS_RESULTS_STREAM`, `NATS_RESULTS_PREFIX`).
+- Payload schemas live in `packages/core/src/contract/`; the operator vendors them via `make contract-sync` (roundtable repo), so a schema change here needs a matching operator sync. See `docs/knight-task-contract.md` in roundtable-k8s/roundtable.
 
 ## Environment Variables
 
-Key env vars set by the operator:
-- `KNIGHT_NAME` — Identity
-- `NATS_URL` — JetStream connection
-- `NATS_TASKS_STREAM`, `NATS_RESULTS_STREAM`, `NATS_RESULTS_PREFIX` — Stream config
-- `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` — AI provider
-- `SKILLS_DIR` — Arsenal skills mount path
-- `WORKSPACE_DIR` — Persistent workspace
-- `SHARED_DIR` — Shared CephFS mount (`/shared`)
+Set by the operator: `KNIGHT_NAME`, `NATS_URL`, the `NATS_*` stream vars above, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SKILLS_DIR`, `WORKSPACE_DIR`, `SHARED_DIR`. The authoritative list is `packages/core/src/config.ts` and `packages/pi-knight/src/config.ts`.
 
 ## Knight Communication
 
-Knight-to-knight comms are baked into `src/tools/nats.ts` (not arsenal skills). Knights can:
-- Send messages to other knights via NATS
-- Query knight status
-- NATS prefix derived from `NATS_RESULTS_PREFIX` env var (operator sets per-table)
-
-## Coding Agent Capabilities
-
-When `pi-coding-agent` is active, knights get:
-- `bash` — Execute shell commands
-- `read` — Read files
-- `write` — Write files  
-- `edit` — Precise file edits
-- Inner iteration loops for complex tasks
+Knight-to-knight tools are built in (`packages/pi-knight/src/tools/nats.ts`, `find-knights.ts`), not arsenal skills. The NATS prefix derives from `NATS_RESULTS_PREFIX`, set per table by the operator.
 
 ## Known Gotchas
 
 - Knights can self-install tools: `nix profile install nixpkgs#<package>` (persists on PVC)
-- Nix entrypoint checks `/nix/store` but not `~/.nix-profile` symlink integrity — stale PVCs with broken symlinks cause silent tool failure (delete PVC to fix)
-- Knights describe work instead of outputting artifacts — always verify output IS the deliverable
-- Frontend tasks need explicit `npx tsc --noEmit` mandate — knights skip it otherwise
+- Stale PVCs with broken `~/.nix-profile` symlinks cause silent tool failure (delete PVC to fix)
+- Knights describe work instead of outputting artifacts — verify output IS the deliverable
+- Frontend tasks need an explicit `npx tsc --noEmit` mandate — knights skip it otherwise
