@@ -93,6 +93,12 @@ When completing work related to an issue:
 3. If partially done, update with remaining tasks
 4. Create new issues for discovered sub-work
 
+## What this knight can and cannot do
+
+- `gh` needs `api.github.com` in `spec.egress.allowedHosts` and the knight's GitHub token (`GH_TOKEN` / `GITHUB_TOKEN`) in the environment.
+- Without the host, `gh` fails with `error connecting to api.github.com` or a timeout; without the token it fails with `gh auth login` / `HTTP 401`.
+- If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path). Do not ask for or paste a token; report that `gh` is not authenticated.
+
 ## Constraints
 
 - **Read + Write access** to issues, PRs, contents, projects

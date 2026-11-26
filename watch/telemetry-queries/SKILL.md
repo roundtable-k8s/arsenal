@@ -66,6 +66,12 @@ vq 'k_namespace_name:roundtable k_pod_name:roundtable-operator* _time:24h "ERROR
 If a field filter returns nothing, the JSON probably wasn't parsed into fields —
 fall back to substring matching (`"task.failed"`, `"\"level\":50"`), which always works.
 
+## What this knight can and cannot do
+
+- Prometheus and Victoria Logs are in-cluster Services, reachable only if the Knight lists them in `spec.egress.allowedServices`: `kube-prometheus-stack-prometheus` in namespace `observability` on port 9090, and `victoria-logs-server` in namespace `observability` on port 9428.
+- With an entry missing, `curl` usually hangs until it times out (the policy drops the connection); `Could not resolve host` or `Connection refused` are also possible.
+- If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path).
+
 ## Discipline
 
 - **Aggregate before sampling.** `stats by (...) count()` first; only fetch raw
