@@ -130,7 +130,7 @@ done
 
 # ---- Kubernetes ----
 kubectl="${KUBECTL:-kubectl}"
-chains=null; knights=null; pods=null; operator=null; dead=null; prfeedback=null; held=null
+chains=null; knights=null; pods=null; operator=null; pods_read=1; dead=null; prfeedback=null; held=null
 get() { "$kubectl" -n "$namespace" get "$1" -o json > "$tmp/$2" 2>"$tmp/err"; }
 if [ -z "$namespace" ]; then
   error cluster "no namespace configured"
@@ -181,11 +181,12 @@ else
     error cluster.operator "$(reason "$tmp/err")"
     pods_read=0
   fi
-  if [ "${pods_read:-1}" = 1 ]; then
+  if [ "$pods_read" = 1 ]; then
     operator="$(jq -c '[.items[] | select(.metadata.labels["app.kubernetes.io/name"] == "roundtable-operator")]
       | sort_by(.metadata.creationTimestamp) | last // null
       | if . == null then null else {podName: .metadata.name,
-          startedAt: (.status.startTime // .metadata.creationTimestamp // null),
+          startedAt: ([.status.containerStatuses[]? | .state.running.startedAt // empty] | max
+                       // .status.startTime // .metadata.creationTimestamp // null),
           restarts: ([.status.containerStatuses[]? | .restartCount // 0] | add // 0)} end' "$tmp/pods")"
     [ "$operator" != null ] || error cluster.operator "no pod with label app.kubernetes.io/name=roundtable-operator"
   fi

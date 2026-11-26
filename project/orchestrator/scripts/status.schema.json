@@ -69,7 +69,7 @@
         },
         "podsNotRunning": {"type": ["array", "null"], "items": {"$ref": "#/$defs/pod"}},
         "operator": {
-          "description": "The operator pod (label app.kubernetes.io/name=roundtable-operator); null when it cannot be read. A Running chain step whose startedAt is before startedAt was in flight across an operator restart.",
+          "description": "The operator pod (label app.kubernetes.io/name=roundtable-operator); null when it cannot be read. startedAt is when the operator process last started (newest running container start, else the pod start). A Running chain step whose startedAt is before it was in flight across an operator restart.",
           "anyOf": [
             {"type": "null"},
             {

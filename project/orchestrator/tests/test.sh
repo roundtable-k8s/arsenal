@@ -124,7 +124,7 @@ EOF
   cat > "$FIX/k8s/pods.json" <<'EOF'
 {"items":[
  {"metadata":{"name":"ok-pod"},"status":{"phase":"Running","containerStatuses":[{"name":"main","ready":true,"restartCount":0}]}},
- {"metadata":{"name":"rt-operator-abc","creationTimestamp":"2026-01-01T00:00:00Z","labels":{"app.kubernetes.io/name":"roundtable-operator"}},"status":{"phase":"Running","startTime":"2026-01-03T08:00:00Z","containerStatuses":[{"name":"manager","ready":true,"restartCount":2}]}},
+ {"metadata":{"name":"rt-operator-abc","creationTimestamp":"2026-01-01T00:00:00Z","labels":{"app.kubernetes.io/name":"roundtable-operator"}},"status":{"phase":"Running","startTime":"2026-01-03T08:00:00Z","containerStatuses":[{"name":"manager","ready":true,"restartCount":2,"state":{"running":{"startedAt":"2026-01-03T09:30:00Z"}}},{"name":"sidecar","ready":true,"restartCount":0,"state":{"running":{"startedAt":"2026-01-03T08:00:05Z"}}}]}},
  {"metadata":{"name":"done-pod"},"status":{"phase":"Succeeded"}},
  {"metadata":{"name":"pull-pod"},"status":{"phase":"Pending","containerStatuses":[
     {"name":"main","ready":false,"restartCount":0,"state":{"waiting":{"reason":"ImagePullBackOff"}}},
@@ -176,11 +176,14 @@ q '[.cluster.chains.Failed[].name] == ["pr-pipeline-dashboard-9","pr-pipeline-se
 q '.cluster.chains.Failed[1].failedSteps == [{name:"code",error:"knight stopped before finishing",taskId:"t-3"}]'
 check "failed chain names the failed step and its error" $?
 q '.cluster.chains.Running[0] | .name == "pr-pipeline-service-4" and .failedSteps == [] and .completedAt == null'; check "running chain" $?
-q '.cluster.chains.Running[0].runningSteps | length == 2 and .[0] == {name:"code",phase:"Running",taskId:"t-4",startedAt:.[0].startedAt,pickedUpAt:.[0].pickedUpAt}
-     and .[0].pickedUpAt != null and .[0].startedAt != null and .[1].taskId == "t-5" and .[1].pickedUpAt == null and .[1].startedAt != null'
+q --slurpfile fx "$FIX/k8s/chains.ai.roundtable.io.json" '($fx[0].items[] | select(.metadata.name == "pr-pipeline-service-4") | .status.stepStatuses) as $st
+     | .cluster.chains.Running[0].runningSteps == [
+       {name:"code",phase:"Running",taskId:"t-4",startedAt:$st[1].startedAt,pickedUpAt:$st[1].pickedUpAt},
+       {name:"review",phase:"Running",taskId:"t-5",startedAt:$st[2].startedAt,pickedUpAt:null}]
+     and $st[1].startedAt != null and $st[1].pickedUpAt != null and $st[2].startedAt != null'
 check "running chain: runningSteps with both timestamps, unpicked step has null pickedUpAt" $?
 q '.cluster.chains.Failed[0] | has("runningSteps") | not'; check "runningSteps only on Running chains" $?
-q '.cluster.operator == {podName:"rt-operator-abc",startedAt:"2026-01-03T08:00:00Z",restarts:2}'; check "operator pod start time and restarts" $?
+q '.cluster.operator == {podName:"rt-operator-abc",startedAt:"2026-01-03T09:30:00Z",restarts:2}'; check "operator startedAt is the newest container start (later than the pod start), plus restarts" $?
 q '.cluster.chains.Unknown[0].name == "pr-pipeline-dashboard-1"'; check "chain without status is Unknown" $?
 q '.cluster.knights == {Ready:[{name:"rt-a",phase:"Ready",ready:true},{name:"rt-b",phase:"Ready",ready:true}],
                        Degraded:[{name:"rt-c",phase:"Degraded",ready:false}],
