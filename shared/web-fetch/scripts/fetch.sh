@@ -9,7 +9,7 @@ MAX_CHARS="${2:-10000}"
 ERRFILE=$(mktemp); trap 'rm -f "$ERRFILE"' EXIT
 
 rc=0
-OUT=$(curl -sL -A "Mozilla/5.0 (compatible; Knight-Agent/1.0)" \
+OUT=$(curl -sSL -A "Mozilla/5.0 (compatible; Knight-Agent/1.0)" \
   --max-time 15 -w $'\n%{http_code}' \
   "$URL" 2>"$ERRFILE") || rc=$?
 
