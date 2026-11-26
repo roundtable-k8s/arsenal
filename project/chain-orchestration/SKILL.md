@@ -58,8 +58,7 @@ result_a = nats_request(
 
 result_b = nats_request(
   knight: "<infra knight>",
-  task: "Report cluster health: pod status, recent deployments, any alerts. Do not delegate to other knights.",
-  timeout_ms: 180000
+  task: "Report cluster health: pod status, recent deployments, any alerts. Do not delegate to other knights."
 )
 ```
 

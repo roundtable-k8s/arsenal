@@ -58,10 +58,11 @@ npm run storybook      # Component development
 cd api
 go vet ./...
 go test ./...
-
-# Docker (full stack)
-docker build -t roundtable-ui .
 ```
+
+The image is built by CI. A knight pod has no Docker daemon and no Docker Hub access, so never run `docker build` here.
+
+`ui/package.json` scripts: `build`, `test`, `test:coverage`, `storybook` (also `dev`, `test:watch`, `build-storybook`).
 
 ## Architecture
 

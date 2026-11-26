@@ -5,13 +5,13 @@ description: Work within the roundtable operator repo (Go, Kubebuilder). Use whe
 
 # roundtable-operator Codebase Guide
 
-_Last checked against roundtable-k8s/roundtable @ `09b66fb`. Layout below is by directory; run `ls internal/` to see what changed since._
+_Last checked against roundtable-k8s/roundtable @ `9fca414`. Layout below is by directory; run `ls internal/` to see what changed since._
 
 ## Quick Reference
 
 | Aspect | Detail |
 |--------|--------|
-| Language | Go (version in `go.mod`; set `GOTOOLCHAIN` to the toolchain named in `go.mod` for `make test` / `make lint`) |
+| Language | Go (version and `toolchain` pinned in `go.mod`) |
 | Framework | Kubebuilder (controller-runtime) |
 | Tests | Ginkgo + Gomega (BDD), envtest |
 | CRD Group | `ai.roundtable.io/v1alpha1` |
@@ -40,6 +40,7 @@ internal/deadletter/                Dead-letter handling
 internal/notify/                    Notifications
 internal/status/                    Status builder
 internal/telemetry/                 Trace/telemetry ids
+internal/util/                      Shared helpers
 internal/github/                    GitHub client/auth (pickup, PR feedback)
 pkg/nats/                           JetStream client, config, consumers, payload types
 pkg/nats/contract/                  Knight task contract: vendored schemas + generated Go types
@@ -49,7 +50,10 @@ charts/roundtable-operator/         Helm chart (CRDs in crds/, templates in temp
 config/crd/bases/                   Generated CRDs — never edit directly
 docs/                               Design docs (ARCHITECTURE.md, knight-task-contract.md, ...)
 hack/                               Dev scripts
+test/                               e2e (needs a kind cluster), CRD tests, test utils
 ```
+
+The repository's `AGENTS.md` is the authority for commands and generated files; read it first and follow it over this guide.
 
 Tests live beside the code as `*_test.go`; check `Makefile` (`make help`) for targets
 (`make test`, `make lint`, `make helm-check`, `make contract-sync`).
@@ -67,11 +71,13 @@ Tests live beside the code as `*_test.go`; check `Makefile` (`make help`) for ta
 
 ```bash
 make manifests generate   # Regen CRDs + DeepCopy after type changes
-GOTOOLCHAIN=<go.mod toolchain> make test   # fmt, vet, envtest (real API server + etcd)
-GOTOOLCHAIN=<go.mod toolchain> make lint   # golangci-lint
+make test                 # fmt, vet, envtest (real API server + etcd)
+make lint                 # golangci-lint
 make helm-check           # Lint the Helm chart
 make build                # manager + gateway binaries
 ```
+
+`go.mod` pins `toolchain`, so do not set `GOTOOLCHAIN` by hand. Do not run `make docker-*`, `tilt-up` or the e2e targets in a knight pod (no Docker daemon, no kind cluster); leave them to CI.
 
 ## CRD Types — Source of Truth
 
