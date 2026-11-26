@@ -33,6 +33,10 @@ expect_fail() {
 run "$V" "$good"; [ $rc -eq 0 ] && [ "$(last)" = "validate-report: ok" ]; check "SKILL.md example passes" $?
 [ ! -s "$work/err" ]; check "valid report prints nothing on stderr" $?
 run "$V" - < "$good"; [ $rc -eq 0 ] && [ "$(last)" = "validate-report: ok" ]; check "stdin works" $?
+for lit in null false; do
+  printf "%s" "$lit" > "$work/lit.json"; run "$V" "$work/lit.json"
+  [ $rc -eq 1 ] && grep -q "top level is $lit" "$work/err" 2>/dev/null || { [ $rc -eq 1 ] && ! grep -q "not valid JSON" "$work/err"; }; check "bare $lit is valid JSON but not an object" $?
+done
 
 # ---- one failing case per rule ----
 for k in $(jq -r '.required[]' "$schema"); do

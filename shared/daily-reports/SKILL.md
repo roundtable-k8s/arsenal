@@ -70,7 +70,7 @@ Every daily report MUST be a JSON object matching this schema. See [`assets/cont
 | `timestamp` | string | ✅ | ISO-8601 when the report was generated |
 | `summary` | string | ✅ | 2-3 sentence executive summary |
 | `sections` | array | ✅ | One or more report sections (see below) |
-| `highlights` | array | ✅ | 3-5 bullet points for the morning briefing |
+| `highlights` | array | ✅ | 1-5 bullet points for the morning briefing |
 | `follow_up_needed` | boolean | ✅ | Does the user need to act on anything? |
 | `follow_up_questions` | array | ✅ | Questions the user might want answered (empty array if none) |
 
