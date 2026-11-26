@@ -3,7 +3,7 @@ name: evidence-verification
 description: >
   Mandatory evidence rules for any report or briefing that makes factual claims.
   Prevents the known corruption modes: AGE-column misreads, stale Day-N counters,
-  Flux-status-as-outage claims, dropped resolutions, and uncited numbers.
+  Flux-status-as-outage claims, dropped resolutions, and uncited numbers. Use when writing a report or briefing that states facts.
 ---
 
 # Evidence Verification — Report Integrity Rules
@@ -12,6 +12,12 @@ These rules are **mandatory** whenever you produce a report, briefing, or
 summary that makes factual claims. They exist because each one maps to a real
 corruption incident in a published briefing. Violating them produces a
 fabricated briefing.
+
+## When to use
+
+- Before publishing any report or briefing that states facts, counts, durations or statuses.
+- When carrying an item forward ("Day N", "still pending") or reporting that something is resolved.
+- Re-check each claim against its source today; do not rely on memory or yesterday's report.
 
 ## Rule 1 — AGE is not a duration
 
