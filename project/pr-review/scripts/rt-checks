@@ -48,10 +48,12 @@ while IFS=$'\t' read -r bucket name link; do
   esac
   [ "$bucket" = fail ] || continue
   runid="$(sed -nE 's#.*/actions/runs/([0-9]+).*#\1#p' <<<"$link")"
+  jobid="$(sed -nE 's#.*/job/([0-9]+).*#\1#p' <<<"$link")"
+  jobarg=(); [ -z "$jobid" ] || jobarg=(--job "$jobid")
   lrc=1; log=""
   if [ -n "$runid" ]; then
     lrc=0
-    log="$(timeout "$log_timeout" gh run view "$runid" -R "$repo" --log-failed 2>/dev/null)" || lrc=$?
+    log="$(timeout "$log_timeout" gh run view "$runid" -R "$repo" ${jobarg[@]+"${jobarg[@]}"} --log-failed 2>/dev/null)" || lrc=$?
   fi
   if [ "$lrc" -ne 0 ] || [ -z "$log" ]; then
     echo "  log unavailable"

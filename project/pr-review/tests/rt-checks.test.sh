@@ -17,6 +17,7 @@ case "$1 $2" in
     if [ -e "$FIX/checks.err" ]; then cat "$FIX/checks.err" >&2; exit 1; fi
     cat "$FIX/checks.json"; exit 1 ;;
   "run view")
+    echo "$*" > "$FIX/runargs"
     [ -e "$FIX/hang" ] && exec sleep 30
     [ -e "$FIX/nolog" ] && { echo "HTTP 500" >&2; exit 1; }
     cat "$FIX/log" ;;
@@ -46,6 +47,7 @@ run "$script" $U; [ $rc -eq 0 ] && [ "$(last)" = "rt-checks: fail" ]; check "fai
 grep -q "failed step: Run tests" <<<"$out"; check "fail with log: step shown" $?
 grep -q "\[redacted\]" <<<"$out" && ! grep -q "$tok" <<<"$out"; check "fail with log: token redacted" $?
 ! grep -q "line 5$" <<<"$out" && grep -q "line 30" <<<"$out"; check "fail with log: tail only" $?
+grep -q -- "--job 5" "$FIX/runargs"; check "fail with log: scoped to failed job" $?
 
 reset; echo "[{\"name\":\"test\",\"bucket\":\"fail\",\"link\":\"$L\"}]" > "$FIX/checks.json"; touch "$FIX/nolog"
 run "$script" $U; [ $rc -eq 0 ] && [ "$(last)" = "rt-checks: fail" ] && grep -q "log unavailable" <<<"$out"; check "fail with unreadable log" $?
