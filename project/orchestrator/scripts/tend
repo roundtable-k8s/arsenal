@@ -398,9 +398,10 @@ for repo in "${repos[@]}"; do
       [ -n "$cname" ] || continue
       runid="$(sed -nE 's#.*/actions/runs/([0-9]+).*#\1#p' <<<"$clink")"
       [ -n "$runid" ] || continue
-      ikey="$key:$cname"
-      done_already infra "$ikey" && continue   # decided infrastructure for this head: not read again
       jobid="$(sed -nE 's#.*/actions/runs/[0-9]+/job/([0-9]+).*#\1#p' <<<"$clink")"
+      # per job: a re-run keeps the run id but gets new job ids, so its log is read once
+      ikey="$key:$cname:${jobid:-$runid}"
+      done_already infra "$ikey" && continue   # this job was decided infrastructure: not read again
       ck="$runid/$jobid"
       if [ -z "${logrc[$ck]+x}" ]; then   # read each run/job once per invocation
         rc=0
