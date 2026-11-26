@@ -42,6 +42,13 @@ If you cannot create a PR (permissions error, no push access), your result **MUS
 11. Include PR URL in your result
 ```
 
+## What the pod cannot do
+
+- No Docker daemon and no Docker Hub access: never run `docker build`, `make docker-*` or image pulls.
+- No kind cluster: do not run e2e targets.
+- In the PR body, list the checks you left to CI instead of reporting them as run.
+- If a step that was running when the operator restarted is re-delivered, check `git status` and `gh pr list --head <branch>` first and continue the same branch instead of starting over.
+
 ## Git Configuration
 
 Run this immediately after cloning:
@@ -83,11 +90,9 @@ go build ./...
 go test ./... -v
 go vet ./...
 
-# Generate (if CRDs/deepcopy)
-go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.1
-controller-gen object paths="./api/..."
-controller-gen crd rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 ```
+
+If the repository has a `manifests` / `generate` target (CRDs, deepcopy), run `make manifests generate`; the Makefile pins the generator versions.
 
 ## TypeScript / Node Projects
 
