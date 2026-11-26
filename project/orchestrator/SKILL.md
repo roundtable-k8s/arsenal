@@ -172,6 +172,8 @@ in the log.
 
 When a task asks you to review a batch of owner-question issues (a list, or a label such as `needs-human` or `product-direction`), follow [`reference/review-owner-questions.md`](reference/review-owner-questions.md) instead of the numbered procedure.
 
+A task that says to groom repositories follows [`reference/groom.md`](reference/groom.md) instead of the 30-minute check. The four-issue cap of step 4 applies to checks only; a groom task's cap is the one the task names (default 8 per repository).
+
 ## Limits
 
 Never:
@@ -187,6 +189,7 @@ configuration that holds credentials. Every change goes through a pull request.
 - `project/pr-postrun`: the pipeline's own post-run steps (not yours to run).
 - `project/github-pm`: `gh` commands for issues, labels and comments.
 - `reference/review-owner-questions.md`: the one-off procedure for a batch of owner questions.
+- `reference/groom.md`: the procedure for a one-off groom task.
 
 Tests: `bash project/orchestrator/tests/skill.test.sh` (this document and the
 issue-format reference).

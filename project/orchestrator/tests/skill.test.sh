@@ -76,5 +76,23 @@ for f in "$skill" "$fmt" "$review"; do
   check "no cluster or person names in ${f#$here/}" bash -c '! grep -qiE "dapper|derek|merlin|nats-box" "$1"' _ "$f"
 done
 
+# Groom procedure for one-off tasks: linked from SKILL.md, names the issue
+# format and the groomed label, and never adds rt:ready by default.
+groom="$here/reference/groom.md"
+check "groom procedure exists" [ -r "$groom" ]
+check "SKILL.md links the groom procedure" grep -q 'reference/groom.md' "$skill"
+check "SKILL.md has a one-off tasks section" grep -qx '## One-off tasks' "$skill"
+check "one-off tasks heading appears once" bash -c '[ "$(grep -cx "## One-off tasks" "$1")" = 1 ]' _ "$skill"
+check "groom names issue-format.md" grep -q 'issue-format.md' "$groom"
+check "groom adds the groomed label" grep -q '`groomed`' "$groom"
+check "groom adds rt:ready only when the task says so" \
+  grep -q 'Add `rt:ready` only when' "$groom"
+check "groom has the report fields" \
+  bash -c 'grep -q "tracker rows already fixed:" "$1" && grep -q "needs the owner:" "$1"' _ "$groom"
+for f in "$groom"; do
+  check "no workstation paths in ${f#$here/}" bash -c '! grep -qE "(/home/|/Users/|~/)" "$1"' _ "$f"
+  check "no cluster or person names in ${f#$here/}" bash -c '! grep -qiE "dapper|derek|merlin|nats-box" "$1"' _ "$f"
+done
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
