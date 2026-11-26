@@ -10,6 +10,8 @@ export FIX="$work/fix" LOG="$work/log"
 
 # gh stub: reads fixtures from $FIX, logs every call to $LOG.
 #   pr list -R o/r          -> $FIX/prs-o_r.json
+#   api graphql (owner=, name=) -> built from the fixtures below for the open PRs of prs-o_r.json;
+#                              $FIX/fail-graphql fails it, $FIX/gql-trunc-N says PR N has more than 100 reviews
 #   api repos/o/r/pulls/N/reviews  -> $FIX/reviews-o_r-N.json (default [])
 #   api repos/o/r/issues/N/comments -> $FIX/comments-o_r-N.json (default [])
 #   issue view N -R o/r     -> $FIX/issue-o_r-N.json
@@ -28,6 +30,23 @@ repo=""; prev=""
 for a in "$@"; do [ "$prev" = -R ] && repo="${a//\//_}"; prev="$a"; done
 case "$1" in
   api)
+    if [ "$2" = graphql ]; then   # built from the reviews-/comments- fixtures of the open PRs
+      [ -e "$FIX/fail-graphql" ] && { echo "boom" >&2; exit 1; }
+      o=""; nm=""; for a in "$@"; do case "$a" in owner=*) o="${a#owner=}" ;; name=*) nm="${a#name=}" ;; esac; done
+      pf="$FIX/prs-${o}_${nm}.json"; [ -e "$pf" ] || pf=/dev/null
+      nodes='[]'
+      for n in $(jq -r '.[].number' "$pf" 2>/dev/null); do
+        rf="$FIX/reviews-${o}_${nm}-$n.json"; cf="$FIX/comments-${o}_${nm}-$n.json"
+        [ -e "$rf" ] || { rf="$FIX/.empty"; echo '[]' > "$rf"; }; [ -e "$cf" ] || { cf="$FIX/.empty"; echo '[]' > "$cf"; }
+        tr=false; [ -e "$FIX/gql-trunc-$n" ] && tr=true
+        nodes="$(jq -c --argjson n "$n" --argjson tr "$tr" --slurpfile pr "$pf" --slurpfile rv "$rf" --slurpfile cm "$cf" \
+          '. + [{number: $n, headRefOid: ($pr[0][] | select(.number == $n) | .headRefOid),
+                 reviews: {pageInfo: {hasNextPage: $tr}, nodes: [$rv[0][] | {state, submittedAt: .submitted_at, body}]},
+                 comments: {pageInfo: {hasNextPage: false}, nodes: [$cm[0][] | {createdAt: .created_at, body}]}}]' <<<"$nodes")"
+      done
+      jq -nc --argjson nodes "$nodes" '{data: {repository: {pullRequests: {pageInfo: {hasNextPage: false, endCursor: null}, nodes: $nodes}}}}'
+      exit 0
+    fi
     path="${*: -1}"; path="${path%%\?*}"
     if [[ "$path" =~ ^repos/([^/]+)/([^/]+)/pulls/([0-9]+)/reviews$ ]]; then
       f="$FIX/reviews-${BASH_REMATCH[1]}_${BASH_REMATCH[2]}-${BASH_REMATCH[3]}.json"
@@ -355,6 +374,26 @@ reset; prs '[{"number":1,"bot":true,"auto":true,"mss":"DIRTY"}]'; reviews 1 'Ver
 run; ! grep -q fix-check <<<"$out"; check "fix-check: conflicted PR -> rebase, not fix-check" $?
 reset; prs '[{"number":1,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 60 fail; faillog 'assertion error: expected 3 got 2'
 run; ! grep -q fix-check <<<"$out"; check "fix-check: human PR -> nothing" $?
+
+# ---- verdict reads: one GraphQL query per repository, each verdict read once ----
+vreqs() { grep -cE '^gh api ' "$LOG"; }
+manyprs() { # 8 bot PRs; 1 ship it with a failing check, 2 ship it queued-ready, rest no verdict
+  prs '[{"number":1,"bot":true},{"number":2,"bot":true},{"number":3,"bot":true},{"number":4,"bot":true},{"number":5,"bot":true},{"number":6,"bot":true},{"number":7,"bot":true},{"number":8,"bot":true}]'
+  reviews 1 'Verdict: ship it'; reviews 2 'Verdict: needs changes'; reviews 3 'Verdict: ship it'
+}
+reset; manyprs; checks 1 60 fail; faillog 'assertion error: expected 3 got 2'
+again; [ $rc -eq 0 ] && [ "$(vreqs)" = 1 ] && logged "api graphql" && ! logged "pulls/" && ! logged "/comments"; check "verdicts: 8 PRs in two sections cost one graphql request, no REST" $?
+[ "$(lines)" = 3 ] && grep -q 'queued o/r#1 ' <<<"$out" && grep -q 'queued o/r#3 ' <<<"$out" && grep -q '"kind":"fix-check"' <<<"$out" && grep -q 'pull/1 is approved' <<<"$out"; check "verdicts: queue and fix-check results unchanged" $?
+reset; manyprs; touch "$FIX/fail-graphql"; checks 1 60 fail; faillog 'assertion error: expected 3 got 2'
+again; [ "$(lines)" = 3 ] && [ "$(grep -c 'pulls/1/reviews' "$LOG")" = 1 ] && [ "$(grep -c 'pulls/3/reviews' "$LOG")" = 1 ]; check "verdicts: graphql failure falls back to REST, still once per PR" $?
+reset; manyprs; touch "$FIX/gql-trunc-1"
+again; [ "$(lines)" = 2 ] && [ "$(grep -c 'pulls/1/reviews' "$LOG")" = 1 ] && ! logged "pulls/3/reviews"; check "verdicts: a PR with more than 100 reviews is read by REST" $?
+reset; manyprs
+out="$(TEND_TIMING=1 "$tend" --config "$cfg" --state "$ST" 2>"$work/err")"
+[ "$(grep -c '^tend: timing ' "$work/err")" = 5 ] && ! grep -q timing <<<"$out"; check "timing: one stderr line per section, none on stdout" $?
+reset; manyprs
+out="$("$tend" --config "$cfg" --state "$ST" 2>"$work/err")"
+[ ! -s "$work/err" ]; check "timing: silent without TEND_TIMING" $?
 
 # ---- all at once ----
 reset; prs '[{"number":1},{"number":2,"bot":true,"mss":"DIRTY"}]'; reviews 1 'Verdict: ship it'

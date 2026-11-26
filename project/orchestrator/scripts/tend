@@ -9,6 +9,8 @@
 #   --state    state file (default: $ORCHESTRATOR_STATE_DIR/tend-state.json)
 #   --deps     dependency list (default: deps.json next to the state file)
 #   --dry-run  print what would be done; change nothing on GitHub or on disk
+#   TEND_TIMING=1 (environment) prints "tend: timing <section> <n>s" per
+#              section on stderr, to locate a slow run.
 #
 # Actions, per repository in the config:
 #   queue    open PR whose newest "Verdict:" line (non-dismissed reviews and PR
@@ -177,18 +179,55 @@ record() { # action key [extra-json]
 }
 
 # Newest "Verdict:" line of a PR, read the way merge-guard reads it.
-verdict() { # repo number
+# verdict_text reads "[timestamp, body]" JSON lines (non-dismissed reviews and
+# comments) on stdin and prints the newest "Verdict:" line.
+verdict_text() {
+  jq -rs 'sort_by(.[0]) | .[] | .[1] // ""' \
+    | tr -d '\r' | sed -E 's/[*_`]//g; s/^[[:space:]>#-]+//' \
+    | grep -iE '^verdict:' | tail -n 1 || true
+}
+# REST read of one PR: two paginated calls. Only the fallback (see load_verdicts).
+verdict_rest() { # repo number
   local rv cm
   rv="$(gh api --paginate "repos/$1/pulls/$2/reviews?per_page=100")" || return 1
   cm="$(gh api --paginate "repos/$1/issues/$2/comments?per_page=100")" || return 1
   {
     jq -s -c 'add // [] | .[] | select(.state != "DISMISSED") | [.submitted_at, .body]' <<<"$rv"
     jq -s -c 'add // [] | .[] | [.created_at, .body]' <<<"$cm"
-  } | jq -rs 'sort_by(.[0]) | .[] | .[1] // ""' \
-    | tr -d '\r' | sed -E 's/[*_`]//g; s/^[[:space:]>#-]+//' \
-    | grep -iE '^verdict:' | tail -n 1 || true
+  } | verdict_text
+}
+# One paginated GraphQL query per repository reads the reviews and comments of
+# all its open PRs (first 100 of each per PR; a PR with more is read by REST).
+VERDICT_QUERY='query($owner:String!,$name:String!,$endCursor:String){repository(owner:$owner,name:$name){pullRequests(states:OPEN,first:25,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{number headRefOid reviews(first:100){pageInfo{hasNextPage} nodes{state submittedAt body}} comments(first:100){pageInfo{hasNextPage} nodes{createdAt body}}}}}}'
+declare -A vcache vloaded   # verdicts by "repo#num@sha"; repos already queried
+load_verdicts() { # repo
+  local repo="$1" raw line
+  vloaded[$repo]=1
+  raw="$(gh api graphql --paginate -F owner="${repo%%/*}" -F name="${repo#*/}" -f query="$VERDICT_QUERY" 2>/dev/null)" || return 0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    vcache["$repo#$(jq -r '"\(.number)@\(.headRefOid)"' <<<"$line")"]="$(jq -c '.items[]' <<<"$line" | verdict_text)"
+  done < <(jq -s -c '[.[].data.repository.pullRequests.nodes[]?]
+      | .[] | select(.reviews.pageInfo.hasNextPage != true and .comments.pageInfo.hasNextPage != true)
+      | {number, headRefOid, items: (
+          [.reviews.nodes[] | select(.state != "DISMISSED") | [.submittedAt, .body]]
+          + [.comments.nodes[] | [.createdAt, .body]])}' <<<"$raw" 2>/dev/null)
+}
+# verdict_get repo number sha: sets VERDICT; read once per invocation per head
+# commit. Not run in a subshell, so the cache persists. Returns 1 when unreadable.
+verdict_get() {
+  local k="$1#$2@$3"
+  [ -n "${vloaded[$1]+x}" ] || load_verdicts "$1"
+  if [ -z "${vcache[$k]+x}" ]; then
+    vcache[$k]="$(verdict_rest "$1" "$2")" || { unset 'vcache[$k]'; return 1; }
+  fi
+  VERDICT="${vcache[$k]}"
 }
 ship_it() { grep -qiE '^verdict:[[:space:]]*ship it([^[:alnum:]]|$)' <<<"$1"; }
+
+# TEND_TIMING=1: one line per section on stderr with its duration in seconds.
+tstart=$SECONDS
+tmark() { [ "${TEND_TIMING:-}" = 1 ] && echo "tend: timing $1 $((SECONDS - tstart))s" >&2; tstart=$SECONDS; return 0; }
 
 # ---- queue + rebase --------------------------------------------------------
 for repo in "${repos[@]}"; do
@@ -201,8 +240,8 @@ for repo in "${repos[@]}"; do
     [ -n "$num" ] || continue
     key="$repo#$num@$sha"
     done_already queue "$key" && continue
-    v="$(verdict "$repo" "$num")" || { warn "could not read the verdict of $url"; continue; }
-    ship_it "$v" || continue
+    verdict_get "$repo" "$num" "$sha" || { warn "could not read the verdict of $url"; continue; }
+    ship_it "$VERDICT" || continue
     if [ "$dry" = 1 ]; then say "queued $repo#$num (ship it, head ${sha:0:7})"; continue; fi
     if out="$(gh pr merge "$url" --auto 2>&1)" || grep -qi 'already' <<<"$out"; then
       record queue "$key"
@@ -238,6 +277,8 @@ for repo in "${repos[@]}"; do
         | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
   fi
 done
+
+tmark "queue+rebase"
 
 # ---- requeue transient chain failures --------------------------------------
 issue_json() { gh issue view "$2" -R "$1" --json state,labels; }
@@ -281,6 +322,8 @@ else
   warn "could not list chains (kubectl get chains.ai.roundtable.io failed); skipped re-queueing"
 fi
 
+tmark requeue
+
 # ---- deps feeder -----------------------------------------------------------
 if [ -e "$deps" ]; then
   if jq -e 'type == "object"' "$deps" >/dev/null 2>&1; then
@@ -314,6 +357,8 @@ if [ -e "$deps" ]; then
     warn "dependency file '$deps' is not a JSON object (\"owner/repo#N\": [\"owner/repo#M\", ...])"
   fi
 fi
+
+tmark deps
 
 # ---- CI re-runs on infrastructure errors -----------------------------------
 infra_re="$(join_re "${INFRA_PATTERNS[@]}")"
@@ -375,6 +420,8 @@ elif [ "$unreadable" -gt 0 ]; then
   warn "could not read the failed logs of $unreadable runs over the network; they are retried next check"
 fi
 
+tmark "ci-rerun"
+
 # ---- fix-check: approved PRs blocked by a failed required check -------------
 # Reuses the CI patterns above: an infrastructure failure is a re-run (done by
 # the section above), not a fix.
@@ -388,8 +435,8 @@ for repo in "${repos[@]}"; do
     [ -n "$num" ] || continue
     key="$repo#$num@$sha"
     done_already fixcheck "$key" && continue
-    v="$(verdict "$repo" "$num")" || { warn "could not read the verdict of $url"; continue; }
-    ship_it "$v" || continue
+    verdict_get "$repo" "$num" "$sha" || { warn "could not read the verdict of $url"; continue; }
+    ship_it "$VERDICT" || continue
     # gh pr checks exits 1 when a required check failed and 8 while checks are pending: judge by the output
     checks="$(gh pr checks "$num" -R "$repo" --required --json name,bucket,link,completedAt 2>/dev/null)" || true
     jq -e 'type == "array"' <<<"${checks:-}" >/dev/null 2>&1 || continue   # no required checks, or unreadable: next check
@@ -441,5 +488,7 @@ for repo in "${repos[@]}"; do
       | select(.author.is_bot == true or (($bot != "") and ((.author.login // "") | test($bot))))
       | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
 done
+
+tmark fix-check
 
 exit "$status"
