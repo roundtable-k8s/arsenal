@@ -5,6 +5,7 @@
 set -uo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 skill="$here/SKILL.md"; fmt="$here/reference/issue-format.md"
+review="$here/reference/review-owner-questions.md"
 pass=0; fail=0
 ok()  { pass=$((pass + 1)); echo "  ok   $1"; }
 bad() { fail=$((fail + 1)); echo "  FAIL $1"; }
@@ -28,7 +29,19 @@ check "feed writes two to four issues" grep -q 'two to four' "$skill"
 check "feed links the issue format" grep -q 'reference/issue-format.md' "$skill"
 check "decide comment format" grep -q 'Decided <YYYY-MM-DD> (orchestrator)' "$skill"
 check "decide leaves taste to the owner" grep -q 'product-direction and taste questions' "$skill"
+check "decide names the decision register path" grep -q 'docs/decisions.md' "$skill"
+check "one-off section links the review procedure" grep -q 'reference/review-owner-questions.md' "$skill"
 check "log is 3-8 lines" grep -q '3–8 plain lines' "$skill"
+
+# One-off owner-question review: the reference file covers the six points.
+check "review reference exists" [ -r "$review" ]
+check "review reads both sources from the operator repo" \
+  bash -c 'grep -q "docs/principles.md" "$1" && grep -q "docs/decisions.md" "$1"' _ "$review"
+check "review uses the step 5 comment format" grep -q 'Decided <YYYY-MM-DD> (orchestrator)' "$review"
+for n in 1 2 3 4 5 6; do
+  check "review has point $n" grep -qE "^$n\. \*\*" "$review"
+done
+check "review never decides product-direction or taste" grep -q 'Never decide' "$review"
 for s in status tend dispatch alert; do
   check "names scripts/$s" grep -q "\$S/$s" "$skill"
 done
@@ -58,7 +71,7 @@ check "issue format starts with Part of #<epic>" grep -q '^Part of #<epic>' "$fm
 check "conventional titles" grep -q 'feat(scope)' "$fmt"
 
 # Nothing environment-specific: no workstation paths, cluster or personal names.
-for f in "$skill" "$fmt"; do
+for f in "$skill" "$fmt" "$review"; do
   check "no workstation paths in ${f#$here/}" bash -c '! grep -qE "(/home/|/Users/|~/)" "$1"' _ "$f"
   check "no cluster or person names in ${f#$here/}" bash -c '! grep -qiE "dapper|derek|merlin|nats-box" "$1"' _ "$f"
 done

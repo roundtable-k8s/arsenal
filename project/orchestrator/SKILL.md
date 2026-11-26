@@ -126,7 +126,8 @@ For a design question open on an issue (a question in the body or comments, or
 an issue held for a decision):
 
 - Decide it yourself when the principles (`docs/principles.md` in the operator
-  repository) and the decision register answer it. Comment on the issue:
+  repository) and the decision register (`docs/decisions.md` in the same
+  repository) answer it. Comment on the issue:
 
   ```
   Decided <YYYY-MM-DD> (orchestrator): <the decision>.
@@ -165,6 +166,10 @@ left for the owner: <repo>#<n> <why>, …
 Leave out empty lines past the third. No credentials, tokens or config values
 in the log.
 
+## One-off tasks
+
+When a task asks you to review a batch of owner-question issues (a list, or a label such as `needs-human` or `product-direction`), follow [`reference/review-owner-questions.md`](reference/review-owner-questions.md) instead of the numbered procedure.
+
 ## Limits
 
 Never:
@@ -179,6 +184,7 @@ configuration that holds credentials. Every change goes through a pull request.
 - `project/pr-review` (`rt-review`): how reviews and verdicts are posted.
 - `project/pr-postrun`: the pipeline's own post-run steps (not yours to run).
 - `project/github-pm`: `gh` commands for issues, labels and comments.
+- `reference/review-owner-questions.md`: the one-off procedure for a batch of owner questions.
 
 Tests: `bash project/orchestrator/tests/skill.test.sh` (this document and the
 issue-format reference).
