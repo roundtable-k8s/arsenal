@@ -4,22 +4,26 @@ This guide covers how to create, structure, and contribute skills following the 
 
 ## Quick Start
 
-1. Pick a tier: `shared/`, `security/`, `intel/`, or `comms/`
-2. Create a directory: `<tier>/<skill-name>/`
+1. Pick a category: `shared/`, `project/`, `watch/`, `coding/` or `operator/`
+2. Create a directory: `<category>/<skill-name>/`
 3. Write a `SKILL.md` with YAML frontmatter
 4. Add `scripts/`, `references/`, and `assets/` as needed
 5. Open a PR
 
-## Skill Tiers
+## Skill Categories
 
-| Tier | Directory | Who Gets It | Purpose |
-|------|-----------|-------------|---------|
-| **shared** | `shared/` | All knights | Base capabilities — communication, search, reporting |
-| **security** | `security/` | Security knights (Galahad) | Threat intel, CVE analysis, SIEM integration |
-| **intel** | `intel/` | Intelligence knights | News, weather, data gathering |
-| **comms** | `comms/` | Communications knights | Email, notifications, messaging |
+| Category | Directory | Purpose |
+|----------|-----------|---------|
+| **shared** | `shared/` | Base capabilities for all knights — search, reporting, verification |
+| **project** | `project/` | Chains and fleet coordination — orchestrator, PR review, briefings |
+| **watch** | `watch/` | Night Watch — platform self-healing |
+| **coding** | `coding/` | Working on the Round Table itself — operator, UI, arsenal, runtime |
+| **operator** | `operator/` | Prompts used by the operator (plain `.md` files, not skills) |
 
-**Rule of thumb:** If every knight needs it → `shared/`. If only domain specialists need it → domain tier.
+**Rule of thumb:** If every knight needs it → `shared/`. Otherwise pick the closest
+category above. **Domain packs (security, finance, intel, …) live in your own
+arsenal**, added as a `spec.arsenals` entry (see [Git-Sync Delivery](#git-sync-delivery)),
+not in this repo.
 
 ## Directory Structure (agentskills.io spec)
 
@@ -43,8 +47,6 @@ allowed-tools: Bash(curl:*) Read Write
 metadata:
   author: roundtable
   version: "1.0"
-  tier: shared
-  compatibility: Any environment requirements
 ---
 
 # My Skill
@@ -61,7 +63,7 @@ Instructions for the agent go here as markdown.
 | `allowed-tools` | No | Space-delimited list of pre-approved tools |
 | `license` | No | License name or reference to LICENSE file |
 | `compatibility` | No | Environment requirements (max 500 chars) |
-| `metadata` | No | Key-value pairs: author, version, tier, etc. |
+| `metadata` | No | Optional key-value pairs: author, version, etc. (no skill here requires it) |
 
 #### Name Rules
 - ✅ `cve-deep-dive`, `web-search`, `opencti-intel`
@@ -86,7 +88,7 @@ description: Query the OpenCTI threat intelligence platform for STIX 2.1 data in
 
 Put runnable scripts here. They should be:
 - **Self-contained** — minimal external dependencies
-- **No jq** — Knight containers don't ship jq; use grep/sed/cut
+- **Image tools** — `jq`, `curl`, `git` and `gh` are in the knight image. Anything else (`sqlite3`, `yq`, …) must be named in the skill's `compatibility` field and comes from `spec.tools.nix`
 - **Executable** — `chmod +x` all scripts
 - **Documented** — include usage comments at the top
 
@@ -173,32 +175,27 @@ See [references/QUERIES.md](references/QUERIES.md) for the full query reference.
 
 ## Example: Creating a New Skill
 
-Let's say you want a skill for querying a Wazuh SIEM:
+Let's say you want a skill for checking Prometheus alerts, in the `watch/` category:
 
 ```
-security/wazuh-siem/
+watch/prometheus-alerts/
 ├── SKILL.md
 ├── scripts/
-│   ├── wazuh-alerts.sh      # Fetch recent alerts
-│   ├── wazuh-agents.sh      # List connected agents
-│   └── wazuh-search.sh      # Search events
+│   └── alerts.sh            # Fetch firing alerts
+├── tests/
+│   └── test.sh              # Script tests (stubs on PATH)
 ├── references/
-│   ├── api-endpoints.md     # Wazuh API reference
-│   └── alert-levels.md      # Severity level mapping
+│   └── api-endpoints.md     # Prometheus API reference
 └── assets/
-    └── siem-report.md       # Report template
+    └── alert-report.md      # Report template
 ```
 
 ```yaml
 ---
-name: wazuh-siem
-description: Query the Wazuh SIEM for security alerts, agent status, and event searches. Use for incident investigation, compliance checks, and security monitoring dashboards.
+name: prometheus-alerts
+description: Query Prometheus for firing alerts and summarise them. Use for incident triage and platform health checks.
 allowed-tools: Bash(curl:*) Read Write
-metadata:
-  author: roundtable
-  version: "1.0"
-  tier: security
-  compatibility: Requires WAZUH_URL and WAZUH_TOKEN environment variables
+compatibility: Requires PROMETHEUS_URL environment variable
 ---
 ```
 
@@ -259,7 +256,19 @@ find scripts/ -type f \( -name "*.sh" -o -name "*.py" \) ! -executable
 find scripts/ -name "*.sh" -exec bash -n {} \;
 ```
 
-The CI workflow validates all of this automatically on PRs.
+The CI `validate-skills` job checks frontmatter, that `name` equals the
+directory, and script executable bits. It does not run script tests or check
+references; run those yourself.
+
+### Tests
+
+Skills with scripts get `tests/test.sh`, using stubs on `PATH` instead of real
+network calls; `project/pr-review/tests/test.sh` is the model. Run them all with:
+
+```bash
+for t in */*/tests/*.sh; do bash "$t"; done
+bash tests/layout.test.sh   # README tree and SKILL.md path references
+```
 
 ## Checklist
 
@@ -269,8 +278,8 @@ Before submitting:
 - [ ] `name` matches the directory name exactly
 - [ ] `description` is specific enough for agents to discover
 - [ ] Scripts are executable (`chmod +x`)
-- [ ] Scripts don't depend on `jq`
+- [ ] Scripts only need `jq`, `curl`, `git`, `gh` — anything else is in `compatibility`
+- [ ] Script tests in `tests/test.sh` pass
 - [ ] No hardcoded secrets (use environment variables)
 - [ ] SKILL.md body is under 500 lines
-- [ ] Placed in the correct tier directory
-- [ ] `metadata.tier` matches the actual directory tier
+- [ ] Placed in the correct category directory and listed in the README tree

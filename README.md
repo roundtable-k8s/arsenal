@@ -22,7 +22,10 @@ arsenal/
 │   ├── chain-orchestration/   # Multi-knight chain execution
 │   ├── briefing-synthesis/    # Merge knight outputs into one briefing
 │   ├── fleet-status/          # Fleet health summary
-│   └── github-pm/             # Roadmap/issue management for the operator repo
+│   ├── github-pm/             # Roadmap/issue management for the operator repo
+│   ├── orchestrator/          # Plan, dispatch and tend issue work
+│   ├── pr-postrun/            # Post-run PR housekeeping
+│   └── pr-review/             # PR review helpers
 │
 ├── watch/                     # Night Watch — platform self-healing
 │   ├── telemetry-queries/     # Prometheus / Victoria Logs queries

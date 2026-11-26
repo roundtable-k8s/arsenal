@@ -10,17 +10,18 @@ description: Work within the Round Table platform arsenal repo (roundtable-k8s/a
 | Aspect | Detail |
 |--------|--------|
 | Repo | `roundtable-k8s/arsenal` — the platform arsenal (an empty `spec.arsenals` entry resolves here) |
-| Format | AgentSkills (SKILL.md + scripts/references/assets) |
+| Format | AgentSkills (SKILL.md + `scripts/`, `references/`, `assets/`) |
 | CI | `.github/workflows/validate-skills.yaml` |
 | Git-synced | Operator syncs it to knight pods via `spec.arsenals` (ordered list), merged per skill |
 
 ## Repository Layout
 
-Skills are organized by tier folder, each containing one or more skills:
+Skills are organized by category folder, each containing one or more skills:
 
 ```
 shared/      Cross-cutting skills (daily-reports, web-search, evidence-verification, …)
-project/     Round Table project work (briefing-synthesis, chain-orchestration, fleet-status, github-pm)
+project/     Round Table project work (briefing-synthesis, chain-orchestration, fleet-status, github-pm,
+             orchestrator, pr-postrun, pr-review)
 watch/       Night Watch (night-watch-triage, telemetry-queries)
 coding/      Working on the Round Table itself (roundtable-operator, roundtable-ui,
              pi-knight-runtime [= the knights monorepo], roundtable-arsenal, night-watch-fix) + coding-agent.md
@@ -39,8 +40,8 @@ skill-name/
 ├── SKILL.md              # Required: frontmatter (name, description) + instructions
 ├── scripts/              # Optional: executable code (bash, python)
 ├── references/           # Optional: docs loaded into context as needed
-├── templates/            # Optional: output templates (markdown, etc.)
-└── assets/               # Optional: static files (icons, fonts)
+├── assets/               # Optional: templates, schemas, static data
+└── tests/test.sh         # Script tests (stubs on PATH); model: project/pr-review/tests/test.sh
 ```
 
 ### SKILL.md Format
@@ -62,22 +63,25 @@ Instructions, workflows, and guidance here.
 2. **Match freedom to fragility** — fragile operations need specific scripts; flexible tasks need guidance.
 3. **Prefer examples over explanations** — show, don't tell.
 4. **Scripts for repeatability** — if you'd rewrite the same code twice, make it a script.
-5. **Templates for consistent output** — daily reports, briefings, etc.
+5. **Assets for consistent output** — report and briefing templates in `assets/`.
 
 ## Conventions
 
 - Domain folders are lowercase, hyphenated
 - Skill folders are lowercase, hyphenated
 - Scripts should be executable (`chmod +x`) with shebangs
-- Config shared across skills goes in `<domain>/config/`
+- Knight images ship `jq`, `curl`, `git`, `gh`; anything else goes in `compatibility` and `spec.tools.nix`
+- Run `bash tests/layout.test.sh` (README tree and SKILL.md path references) and the script tests
 - `shared/` skills are mounted by ALL knights — keep them lean
 
 ## CI Validation
 
 The `validate-skills.yaml` workflow checks:
-- Every skill directory has a `SKILL.md`
 - Frontmatter has `name` and `description`
-- No broken references
+- `name` equals the directory name
+- Script files are executable
+
+It does not check references or run script tests (see `tests/layout.test.sh`).
 
 ## Git Sync
 
