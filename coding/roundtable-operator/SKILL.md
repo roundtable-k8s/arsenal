@@ -11,7 +11,7 @@ _Last checked against roundtable-k8s/roundtable @ `09b66fb`. Layout below is by 
 
 | Aspect | Detail |
 |--------|--------|
-| Language | Go (version in `go.mod`; use `GOTOOLCHAIN=go1.26.1` for `make test` / `make lint`) |
+| Language | Go (version in `go.mod`; set `GOTOOLCHAIN` to the toolchain named in `go.mod` for `make test` / `make lint`) |
 | Framework | Kubebuilder (controller-runtime) |
 | Tests | Ginkgo + Gomega (BDD), envtest |
 | CRD Group | `ai.roundtable.io/v1alpha1` |
@@ -67,8 +67,8 @@ Tests live beside the code as `*_test.go`; check `Makefile` (`make help`) for ta
 
 ```bash
 make manifests generate   # Regen CRDs + DeepCopy after type changes
-GOTOOLCHAIN=go1.26.1 make test   # fmt, vet, envtest (real API server + etcd)
-GOTOOLCHAIN=go1.26.1 make lint   # golangci-lint
+GOTOOLCHAIN=<go.mod toolchain> make test   # fmt, vet, envtest (real API server + etcd)
+GOTOOLCHAIN=<go.mod toolchain> make lint   # golangci-lint
 make helm-check           # Lint the Helm chart
 make build                # manager + gateway binaries
 ```

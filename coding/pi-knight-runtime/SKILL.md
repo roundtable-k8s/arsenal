@@ -29,7 +29,7 @@ packages/pi-knight/src/     pi runtime: index.ts, knight.ts (task handling), con
   tools/                    Knight tools (nats.ts, find-knights.ts, browser.ts, subagent.ts)
 packages/claude-knight/src/ Claude Code runtime: cli-runner, hooks, guardrails, mcp-*, sessions, stream
 packages/*/tests/           Tests per package
-scripts/                    Dev scripts
+scripts/dev                 Dev script
 ```
 
 Shared code goes in `packages/core`; work in one package unless the task says otherwise.
@@ -54,7 +54,7 @@ Run typecheck, test and lint before pushing.
 
 ## Environment Variables
 
-Set by the operator: `KNIGHT_NAME`, `NATS_URL`, the `NATS_*` stream vars above, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SKILLS_DIR`, `WORKSPACE_DIR`, `SHARED_DIR`. The authoritative list is `packages/core/src/config.ts` and `packages/pi-knight/src/config.ts`.
+Core vars: `KNIGHT_NAME`, `NATS_*` (URL and stream vars above), `ROUNDTABLE_TABLE`, `KNIGHT_MODEL`, `KNIGHT_DATA_DIR`, `KNIGHT_WORK_ROOT`, `KNIGHT_SESSIONS_ROOT`, `KNIGHT_MEMORY_*`, `MAX_CONCURRENT_TASKS`; claude-knight also reads `KNIGHT_SKILLS_DIR`. The authoritative list is the `config.ts` files under `packages/`; check them rather than trusting this line.
 
 ## Knight Communication
 
