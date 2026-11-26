@@ -68,15 +68,34 @@ if [ "$active" != true ]; then
   echo "rt-close-parent: ok left-alone $parent"; exit 0
 fi
 
+marker="<!-- rt-postrun:rt-close-parent -->"
+# Post unless a marker comment already carries every line. When the comments cannot
+# be read, post nothing.
 comment_once() {
-  if ! gh issue view "$parent" --repo "$repo" --json comments | jq -e --arg b "$1" '[.comments[].body] | index($b)' >/dev/null; then
-    gh issue comment "$parent" --repo "$repo" --body "$1" >/dev/null
+  local body="$marker"$'\n'"$1" existing
+  if existing="$(gh issue view "$parent" --repo "$repo" --json comments | jq -c '[.comments[].body]')"; then
+    if ! jq -e --arg m "$marker" --arg b "$body" '($b | split("\n")) as $l
+        | any(.[]; startswith($m) and (split("\n") as $e | all($l[]; . as $x | any($e[]; . == $x))))' <<<"$existing" >/dev/null; then
+      gh issue comment "$parent" --repo "$repo" --body "$body" >/dev/null
+    fi
+  else
+    echo "rt-close-parent: warning: could not read comments on $repo#$parent; not commenting" >&2
   fi
+}
+
+# Merged PRs that reference sub-issue $1, one "<repo>#<n>" per line. Best effort.
+merged_prs() {
+  gh api "repos/$repo/issues/$1/timeline" --paginate 2>/dev/null \
+    | jq -r '.[]? | select(.event == "cross-referenced") | .source.issue
+             | select(.pull_request.merged_at != null) | "\(.repository.full_name // "'"$repo"'")#\(.number)"' 2>/dev/null || true
 }
 
 if [ ${#problems[@]} -eq 0 ]; then
   list=""; for s in "$@"; do list+="#$s, "; done
-  comment_once "All sub-issues (${list%, }) closed as completed; closing this parent."
+  msg="All sub-issues (${list%, }) closed as completed; closing this parent."
+  prs="$(for s in "$@"; do merged_prs "$s"; done | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g')"
+  [ -z "$prs" ] || msg+=$'\n'"Merged PRs: $prs"
+  comment_once "$msg"
   gh issue close "$parent" --repo "$repo" --reason completed >/dev/null
   gh issue edit "$parent" --repo "$repo" --remove-label "$ip" >/dev/null
   echo "rt-close-parent: ok closed $parent"
