@@ -23,6 +23,14 @@ Read your repo's codebase skill first: `coding/roundtable-operator`,
 | roundtable-k8s/arsenal | skills are markdown: valid YAML frontmatter (`name`, `description`), check referenced paths/commands actually exist |
 | the deployment's GitOps repo (named in the Mission briefing) | **Round Table app paths ONLY** (e.g. `kubernetes/apps/roundtable/**`) — never touch anything else. Update the matching `kustomization.yaml` for new files. |
 
+## If a test fails only in the pod
+
+The pod sets variables that a developer machine and CI do not (`KNIGHT_NAME`, `NATS_*`, `ROUNDTABLE_TABLE`, `KNIGHT_MODEL`, `KNIGHT_DATA_DIR`, `MAX_CONCURRENT_TASKS`). Before changing any code, run the repo's test command from the table above again with a clean environment, keeping only what the toolchain needs, for example `env -i PATH="$PATH" HOME="$HOME" go test ./...` or `env -i PATH="$PATH" HOME="$HOME" npm test --workspace packages/<pkg>`.
+
+1. If it now passes, the test depends on the pod's ambient variables. Compare `env | sort` with what the test and its source read (`grep -rn "os.Getenv\|process.env" <test and source files>`), then fix the test so it sets or clears the variables it reads itself. Never fix it by unsetting variables in product code.
+2. If it still fails, it is a real failure: debug it as usual.
+3. Name in the PR body the variables that made the difference.
+
 ## Rules
 
 1. **Reproduce first when feasible.** A failing test that demonstrates the bug is
