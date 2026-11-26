@@ -12,9 +12,17 @@
 # When NTFY_URL or NTFY_TOPIC is unset, prints one line saying so and exits 0:
 # an unconfigured alert is not an error for the check.
 # Exit status: 0 sent or not configured, 1 the post failed, 2 usage errors.
+# A failed post prints one line on stderr naming the cause, never the token:
+#   HTTP 401 or 403 (the server wants a token; NTFY_TOKEN is not set)
+#   HTTP 401 or 403 (NTFY_TOKEN was rejected)
+#   HTTP 404 (unknown topic or URL)
+#   HTTP <code>                  any other non-2xx status
+#   DNS lookup failed, connection refused, timed out
+#                                each adds the egress hint (spec.egress.allowedHosts)
+#   curl exit <rc>               any other transport error
 set -uo pipefail
 
-usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,/^set /p' "$0" | sed '$d; s/^# \{0,1\}//' >&2; exit 2; }
 case "${1:-}" in ""|-h|--help) usage ;; esac
 if [ "$1" = - ] && [ $# -eq 1 ]; then msg="$(cat)"; else msg="$*"; fi
 [ -n "${msg//[[:space:]]/}" ] || { echo "alert: empty message" >&2; exit 2; }
@@ -33,11 +41,36 @@ chmod 600 "$hdr"
   [ -n "${NTFY_TOKEN:-}" ] && printf 'Authorization: Bearer %s\n' "$NTFY_TOKEN"
 } > "$hdr"
 
-if printf '%s' "$msg" | curl -fsS -o /dev/null --max-time 20 -X POST -H "@$hdr" \
-     --data-binary @- "${NTFY_URL%/}/$NTFY_TOPIC" 2>/dev/null; then
+# Cause of a failed post, from curl's exit status ($1) and the HTTP status ($2).
+# curl's own stderr is not shown: it can repeat the URL, and the exit status
+# already says what happened.
+fail_cause() {
+  local rc="$1" code="$2"
+  if [ "$rc" -ne 0 ]; then
+    case "$rc" in
+      6)  echo "DNS lookup failed (blocked by the knight's egress policy? add the host to spec.egress.allowedHosts)" ;;
+      7)  echo "connection refused (blocked by the knight's egress policy? add the host to spec.egress.allowedHosts)" ;;
+      28) echo "timed out (blocked by the knight's egress policy? add the host to spec.egress.allowedHosts)" ;;
+      *)  echo "curl exit $rc" ;;
+    esac
+    return
+  fi
+  case "$code" in
+    401|403)
+      if [ -n "${NTFY_TOKEN:-}" ]; then echo "HTTP $code (NTFY_TOKEN was rejected)"
+      else echo "HTTP $code (the server wants a token; NTFY_TOKEN is not set)"; fi ;;
+    404) echo "HTTP 404 (unknown topic or URL)" ;;
+    *)   echo "HTTP $code" ;;
+  esac
+}
+
+# No -f: the HTTP status is read from -w so that a 401 or 404 gets its own cause.
+code="$(printf '%s' "$msg" | curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST \
+     -H "@$hdr" --data-binary @- "${NTFY_URL%/}/$NTFY_TOPIC" 2>/dev/null)"
+rc=$?
+if [ "$rc" -eq 0 ] && [ "${code:0:1}" = 2 ]; then
   echo "alert: sent to topic $NTFY_TOPIC"
 else
-  rc=$?
-  echo "alert: not sent to topic $NTFY_TOPIC (curl exit $rc)" >&2
+  echo "alert: not sent to topic $NTFY_TOPIC: $(fail_cause "$rc" "$code")" >&2
   exit 1
 fi

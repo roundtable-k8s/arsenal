@@ -20,6 +20,8 @@ case "$1 $2" in
 esac
 STUB
 # curl stub: logs its arguments, the headers of any -H @file and the body.
+# $FIX/curl-exit sets its exit status (default 0); $FIX/curl-code the HTTP status
+# it prints for -w (default 200). Like curl without -f, an HTTP error exits 0.
 cat > "$work/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 echo "curl $*" >> "$LOG"
@@ -29,8 +31,11 @@ for a in "$@"; do
   prev="$a"
 done
 echo "body $(cat)" >> "$LOG"
-[ -e "$FIX/fail-curl" ] && { echo "curl: (22) The requested URL returned error: 500" >&2; exit 22; }
-exit 0
+code=200; [ -e "$FIX/curl-code" ] && code="$(cat "$FIX/curl-code")"
+rc=0; [ -e "$FIX/curl-exit" ] && rc="$(cat "$FIX/curl-exit")"
+[ "$rc" -ne 0 ] && echo "curl: ($rc) stub transport error" >&2
+printf '%s' "$code"
+exit "$rc"
 STUB
 chmod +x "$work/bin/"*
 export PATH="$work/bin:$PATH"
@@ -146,8 +151,29 @@ out="$(NTFY_URL=https://ntfy.test NTFY_TOPIC=t NTFY_TOKEN="$secret" "$alert" hi 
 ! grep -q "$secret" <<<"$out" && ! grep "^curl " "$LOG" | grep -q "$secret"; check "alert: token never printed nor on the command line" $?
 reset; out="$(echo "from stdin" | NTFY_URL=https://ntfy.test NTFY_TOPIC=t "$alert" - 2>&1)"; rc=$?
 [ $rc -eq 0 ] && logged "body from stdin"; check "alert: '-' reads the message from stdin" $?
-reset; touch "$FIX/fail-curl"; out="$(NTFY_URL=https://ntfy.test NTFY_TOPIC=t NTFY_TOKEN="$secret" "$alert" hi 2>&1)"; rc=$?
-[ $rc -eq 1 ] && grep -q "not sent to topic t (curl exit 22)" <<<"$out" && ! grep -q "$secret" <<<"$out"; check "alert: failed post exits 1 without the token" $?
+# failed posts: one line naming the cause, exit 1, token never shown
+alert_fail() { # HTTP code or "-", curl exit status, token or "" ; sets out and rc
+  reset; [ "$1" != - ] && echo "$1" > "$FIX/curl-code"; [ "$2" -ne 0 ] && echo "$2" > "$FIX/curl-exit"
+  out="$(NTFY_URL=https://ntfy.test NTFY_TOPIC=t NTFY_TOKEN="$3" "$alert" hi 2>&1)"; rc=$?
+}
+alert_fail 500 0 "$secret"
+[ $rc -eq 1 ] && [ "$out" = "alert: not sent to topic t: HTTP 500" ] && ! grep -q "$secret" <<<"$out"; check "alert: HTTP 500 names the status, exits 1, no token" $?
+alert_fail 401 0 ""
+[ $rc -eq 1 ] && [ "$out" = "alert: not sent to topic t: HTTP 401 (the server wants a token; NTFY_TOKEN is not set)" ]; check "alert: 401 without a token says the token is missing" $?
+alert_fail 403 0 "$secret"
+[ $rc -eq 1 ] && [ "$out" = "alert: not sent to topic t: HTTP 403 (NTFY_TOKEN was rejected)" ] && ! grep -q "$secret" <<<"$out"; check "alert: 403 with a token says the token was rejected, no token" $?
+alert_fail 404 0 ""
+[ $rc -eq 1 ] && [ "$out" = "alert: not sent to topic t: HTTP 404 (unknown topic or URL)" ]; check "alert: 404 names an unknown topic or URL" $?
+alert_fail - 6 ""
+[ $rc -eq 1 ] && [ "$out" = "alert: not sent to topic t: DNS lookup failed (blocked by the knight's egress policy? add the host to spec.egress.allowedHosts)" ]; check "alert: DNS failure (curl 6) names the egress hint" $?
+alert_fail - 7 ""
+[ $rc -eq 1 ] && [ "$out" = "alert: not sent to topic t: connection refused (blocked by the knight's egress policy? add the host to spec.egress.allowedHosts)" ]; check "alert: refused connection (curl 7) names the egress hint" $?
+alert_fail - 28 "$secret"
+[ $rc -eq 1 ] && [ "$out" = "alert: not sent to topic t: timed out (blocked by the knight's egress policy? add the host to spec.egress.allowedHosts)" ] && ! grep -q "$secret" <<<"$out"; check "alert: timeout (curl 28) names the egress hint, no token" $?
+alert_fail - 35 ""
+[ $rc -eq 1 ] && [ "$out" = "alert: not sent to topic t: curl exit 35" ]; check "alert: other transport error prints the curl exit" $?
+reset; echo 204 > "$FIX/curl-code"; out="$(NTFY_URL=https://ntfy.test NTFY_TOPIC=t "$alert" hi 2>&1)"; rc=$?
+[ $rc -eq 0 ] && [ "$out" = "alert: sent to topic t" ]; check "alert: any 2xx counts as sent" $?
 reset; out="$("$alert" 2>&1)"; rc=$?; [ $rc -eq 2 ]; check "alert: no message exits 2" $?
 
 echo "1..$n"
