@@ -91,7 +91,10 @@ EOF
       stepStatuses:[{name:"plan",phase:"Succeeded"},
                     {name:"code",phase:"Failed",taskId:"t-3",error:"knight stopped before finishing",completedAt:$recent}]}},
     {metadata:{name:"pr-pipeline-service-4"}, status:{phase:"Running", startedAt:$start,
-      stepStatuses:[{name:"plan",phase:"Running",taskId:"t-4"}]}},
+      stepStatuses:[{name:"plan",phase:"Succeeded"},
+                    {name:"code",phase:"Running",taskId:"t-4",startedAt:$start,pickedUpAt:$recent},
+                    {name:"review",phase:"Running",taskId:"t-5",startedAt:$recent},
+                    {name:"post",phase:"Pending"}]}},
     {metadata:{name:"pr-pipeline-dashboard-9"}, status:{phase:"Failed", completedAt:$old,
       stepStatuses:[{name:"review",phase:"Failed",taskId:"t-9",error:"plan: step timed out after 600s",completedAt:$old}]}},
     {metadata:{name:"pr-pipeline-dashboard-1"}, status:{}},
@@ -122,6 +125,7 @@ EOF
   cat > "$FIX/k8s/pods.json" <<'EOF'
 {"items":[
  {"metadata":{"name":"ok-pod"},"status":{"phase":"Running","containerStatuses":[{"name":"main","ready":true,"restartCount":0}]}},
+ {"metadata":{"name":"rt-operator-abc","creationTimestamp":"2026-01-01T00:00:00Z","labels":{"app.kubernetes.io/name":"roundtable-operator"}},"status":{"phase":"Running","startTime":"2026-01-03T08:00:00Z","containerStatuses":[{"name":"manager","ready":true,"restartCount":2,"state":{"running":{"startedAt":"2026-01-03T09:30:00Z"}}},{"name":"sidecar","ready":true,"restartCount":0,"state":{"running":{"startedAt":"2026-01-03T08:00:05Z"}}}]}},
  {"metadata":{"name":"done-pod"},"status":{"phase":"Succeeded"}},
  {"metadata":{"name":"pull-pod"},"status":{"phase":"Pending","containerStatuses":[
     {"name":"main","ready":false,"restartCount":0,"state":{"waiting":{"reason":"ImagePullBackOff"}}},
@@ -173,6 +177,14 @@ q '[.cluster.chains.Failed[].name] == ["pr-pipeline-dashboard-9","pr-pipeline-se
 q '.cluster.chains.Failed[1].failedSteps == [{name:"code",error:"knight stopped before finishing",taskId:"t-3"}]'
 check "failed chain names the failed step and its error" $?
 q '.cluster.chains.Running[0] | .name == "pr-pipeline-service-4" and .failedSteps == [] and .completedAt == null'; check "running chain" $?
+q --slurpfile fx "$FIX/k8s/chains.ai.roundtable.io.json" '($fx[0].items[] | select(.metadata.name == "pr-pipeline-service-4") | .status.stepStatuses) as $st
+     | .cluster.chains.Running[0].runningSteps == [
+       {name:"code",phase:"Running",taskId:"t-4",startedAt:$st[1].startedAt,pickedUpAt:$st[1].pickedUpAt},
+       {name:"review",phase:"Running",taskId:"t-5",startedAt:$st[2].startedAt,pickedUpAt:null}]
+     and $st[1].startedAt != null and $st[1].pickedUpAt != null and $st[2].startedAt != null'
+check "running chain: runningSteps with both timestamps, unpicked step has null pickedUpAt" $?
+q '.cluster.chains.Failed[0] | has("runningSteps") | not'; check "runningSteps only on Running chains" $?
+q '.cluster.operator == {podName:"rt-operator-abc",startedAt:"2026-01-03T09:30:00Z",restarts:2}'; check "operator startedAt is the newest container start (later than the pod start), plus restarts" $?
 q '.cluster.chains.Unknown[0].name == "pr-pipeline-dashboard-1"'; check "chain without status is Unknown" $?
 q '.cluster.knights == {Ready:[{name:"rt-a",phase:"Ready",ready:true},{name:"rt-b",phase:"Ready",ready:true}],
                        Degraded:[{name:"rt-c",phase:"Degraded",ready:false}],
@@ -215,6 +227,31 @@ check "events forbidden: pickupHeld null with an error, other sections read" $?
 fixtures; echo '{"items":[]}' > "$FIX/k8s/events.json"; echo '{"items":[]}' > "$FIX/k8s/roundtables.ai.roundtable.io.json"
 run "$status" --config "$skill/config.example.json"
 valid && q '.cluster.pickupHeld == [] and .cluster.prFeedback == [] and .errors == []'; check "no events and no roundtables: empty arrays" $?
+
+# ---- operator pod missing ----
+fixtures; echo '{"items":[]}' > "$FIX/k8s/pods.json"
+run "$status" --config "$skill/config.example.json"
+[ $rc -eq 0 ] && valid; check "no operator pod: exits 0 and validates" $?
+q '.cluster.operator == null and ([.errors[] | select(.section == "cluster.operator")] | length == 1)'
+check "no operator pod: operator null plus errors entry" $?
+fixtures; touch "$FIX/k8s/forbid-pods"
+run "$status" --config "$skill/config.example.json"
+[ $rc -eq 0 ] && valid; check "pods forbidden: exits 0 and validates" $?
+q '.cluster.operator == null and .cluster.podsNotRunning == null and ([.errors[].section] | index("cluster.operator") != null)'
+check "pods forbidden: operator null plus errors entry" $?
+
+# ---- operator container not running (crash loop) ----
+fixtures
+jq '(.items[] | select(.metadata.name == "rt-operator-abc") | .status.containerStatuses) |= map(.ready = false | .state = {waiting:{reason:"CrashLoopBackOff"}})' "$FIX/k8s/pods.json" > "$work/pods-crash.json" && mv "$work/pods-crash.json" "$FIX/k8s/pods.json"
+run "$status" --config "$skill/config.example.json"
+[ $rc -eq 0 ] && valid; check "operator crash-looping: exits 0 and validates" $?
+q '.cluster.operator == {podName:"rt-operator-abc",startedAt:"2026-01-03T08:00:00Z",restarts:2}'
+check "operator crash-looping: startedAt falls back to the pod start time" $?
+
+# ---- snapshot without the new fields ----
+fixtures; run "$status" --config "$skill/config.example.json"
+jq 'del(.cluster.operator) | .cluster.chains.Running |= map(del(.runningSteps))' <<<"$out" > "$work/old.json"
+python3 -I "$here/validate.py" "$schema" "$work/old.json" >/dev/null 2>&1; check "snapshot without the new fields validates" $?
 
 # ---- kubectl unavailable ----
 fixtures
