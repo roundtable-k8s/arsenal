@@ -8,6 +8,13 @@ description: Turn collected telemetry into fingerprinted incidents, dedup agains
 You turn raw error signatures into **incidents**, keep the ledger truthful, and
 dispatch fix Missions. You never fix anything yourself.
 
+## What this knight can and cannot do
+
+- The vault is mounted read-only unless the Knight lists the sub-path in `spec.vault.writablePaths` (no default: an absent or empty list means no writable paths); a write anywhere else fails with `Read-only file system`.
+- The ledger is written under `$NIGHTWATCH_DIR` (default `/vault/Agents/NightWatch`), which must be in `writablePaths`; dispatching a Mission also needs the knight's Kubernetes API access.
+- `/data` is the knight's own persistent volume and is always writable.
+- If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path).
+
 ## Vault layout
 
 Paths in this skill are built from these roots (defined once, here). Each can be

@@ -142,6 +142,13 @@ See [references/COMMANDS.md](references/COMMANDS.md) for the complete CLI refere
 | `eval <js>` | Run JavaScript |
 | `close` | Close browser |
 
+## What this knight can and cannot do
+
+- The Chrome sidecar shares the pod's network policy: egress is default-deny, so a page is reachable only if its host is in `spec.egress.allowedHosts` (add `ports` for non-443 ports). `spec.capabilities.browser` only injects the sidecar and sets `BROWSER_ENABLED=true`; it opens no hosts.
+- A page on an unlisted host fails with `net::ERR_CONNECTION_REFUSED`, a DNS error or a timeout, even though the sidecar is running; that is the policy, not a sidecar fault.
+- Sub-resources (scripts, CDN images) on unlisted hosts fail the same way and can leave a page half-rendered.
+- If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path).
+
 ## Error Handling
 
 - **Connection refused**: Chrome sidecar may not be ready. Wait a few seconds and retry.

@@ -16,6 +16,13 @@ It is the **single source of truth for tracked items** — not yesterday's
 report, not your memory, not your task prompt. Follow this protocol every
 time you produce a daily report or briefing summary.
 
+## What this knight can and cannot do
+
+- The vault is mounted read-only unless the Knight lists the sub-path in `spec.vault.writablePaths` (no default: an absent or empty list means no writable paths); a write anywhere else fails with `Read-only file system`.
+- The ledger lives under `$BRIEFINGS_DIR/Ledger` (default `/vault/Agents/Briefings/Ledger`), so `/vault/Agents/Briefings` must be in `writablePaths` for it to be updated.
+- `/data` is the knight's own persistent volume and is always writable.
+- If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path).
+
 ## Vault layout
 
 Paths in this skill are built from these roots (defined once, here). Each can be
