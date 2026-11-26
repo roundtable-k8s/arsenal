@@ -77,11 +77,11 @@ reset() { rm -rf "$FIX" "$LOG" "$work/state"; mkdir -p "$FIX" "$work/state"; : >
 run() { out="$("$tend" --config "$cfg" --state "$ST" "$@" 2>&1)"; rc=$?; : > "$LOG"; }
 again() { out="$("$tend" --config "$cfg" --state "$ST" "$@" 2>&1)"; rc=$?; }
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
-prs() { # json array of {number, draft, labels csv, auto, mss, sha, bot}
+prs() { # json array of {number, draft, labels csv, auto, mss, sha, bot, upd}
   jq -c 'map({number, url: "https://github.com/o/r/pull/\(.number)", isDraft: (.draft // false),
       labels: [(.labels // "" | split(",")[] | select(length > 0) | {name: .})],
       autoMergeRequest: (if .auto then {} else null end), mergeStateStatus: (.mss // "CLEAN"),
-      headRefOid: (.sha // "abcdef1234567"), author: {login: (if .bot then "app/coder" else "someone" end), is_bot: (.bot // false)}})' \
+      headRefOid: (.sha // "abcdef1234567"), updatedAt: .upd, author: {login: (if .bot then "app/coder" else "someone" end), is_bot: (.bot // false)}})' \
     <<<"$1" > "$FIX/prs-o_r.json"
 }
 reviews() { jq -nc --arg b "$2" '[{state: "COMMENTED", submitted_at: "2026-01-01T00:00:00Z", body: $b}]' > "$FIX/reviews-o_r-$1.json"; }
@@ -174,6 +174,42 @@ jq '.rebase = "maybe"' "$cfg" > "$work/bad.json"
 out="$("$tend" --config "$work/bad.json" --state "$ST" 2>&1)"; rc=$?; [ $rc -eq 2 ] && grep -q "field 'rebase'" <<<"$out"; check "rebase: unknown value -> exit 2 naming the field" $?
 jq '.rebase = false' "$cfg" > "$work/bad2.json"
 out="$("$tend" --config "$work/bad2.json" --state "$ST" 2>&1)"; rc=$?; [ $rc -eq 2 ]; check "rebase: non-string value -> exit 2" $?
+
+# ---- rebase: breaking PR with the watcher on ----
+ago() { date -u -d "$1 ago" +%Y-%m-%dT%H:%M:%SZ; }
+jq '.rebase = "off"' "$cfg" > "$work/off.json"
+offrun() { out="$("$tend" --config "$work/off.json" --state "$ST" 2>&1)"; rc=$?; }
+reset; prs "[{\"number\":2,\"bot\":true,\"mss\":\"DIRTY\",\"labels\":\"breaking\",\"upd\":\"$(ago '2 hours')\"}]"
+offrun; [ $rc -eq 0 ] && [ "$(lines)" = 1 ] && [[ "$out" == 'tend: dispatch-needed {"kind":"rebase","knight":"coder-knight","taskId":"rebase-r-2-abcdef1"'* ]]; check "breaking: off + stale updatedAt dispatches" $?
+jq -e '.task | contains("This breaking PR blocks the repository'"'"'s issue pickup")' <<<"${out#tend: dispatch-needed }" >/dev/null; check "breaking: task says it blocks issue pickup" $?
+offrun; [ -z "$out" ]; check "breaking: second run on the same head prints nothing" $?
+jq '.rebase["o/r#2@abcdef1234567"].at = "'"$(ago '4 hours')"'"' "$ST" > "$ST.x" && mv "$ST.x" "$ST"
+offrun; [ "$(lines)" = 1 ] && grep -q '"taskId":"rebase-r-2-abcdef1-retry1"' <<<"$out" && grep -q 'produced nothing' <<<"$out"; check "breaking: retry after breakingRetryHours" $?
+offrun; [ -z "$out" ]; check "breaking: no second retry in a row" $?
+jq '.rebase["o/r#2@abcdef1234567"].at = "'"$(ago '4 hours')"'"' "$ST" > "$ST.x" && mv "$ST.x" "$ST"
+offrun; grep -q '"taskId":"rebase-r-2-abcdef1-retry2"' <<<"$out"; check "breaking: next retry is numbered 2" $?
+reset; prs "[{\"number\":2,\"bot\":true,\"mss\":\"DIRTY\",\"labels\":\"breaking\",\"upd\":\"$(ago '5 minutes')\"}]"
+offrun; [ -z "$out" ]; check "breaking: off + fresh updatedAt does not dispatch" $?
+reset; prs "[{\"number\":2,\"bot\":true,\"mss\":\"DIRTY\",\"upd\":\"$(ago '2 hours')\"}]"
+offrun; [ -z "$out" ]; check "breaking: non-breaking PR with off still prints nothing" $?
+reset; prs "[{\"number\":2,\"mss\":\"DIRTY\",\"labels\":\"breaking\",\"upd\":\"$(ago '2 hours')\"}]"
+offrun; [ -z "$out" ]; check "breaking: human-authored breaking PR is not rebased" $?
+reset; prs "[{\"number\":2,\"bot\":true,\"mss\":\"DIRTY\",\"labels\":\"breaking\"}]"
+offrun; [ -z "$out" ]; check "breaking: off + missing updatedAt does not dispatch" $?
+reset; prs "[{\"number\":2,\"bot\":true,\"mss\":\"DIRTY\",\"labels\":\"blocker\",\"upd\":\"$(ago '2 hours')\"}]"
+jq '.breakingLabel = "blocker"' "$work/off.json" > "$work/off-l.json"
+out="$("$tend" --config "$work/off-l.json" --state "$ST" 2>&1)"; grep -q dispatch-needed <<<"$out"; check "breaking: breakingLabel from config" $?
+reset; prs "[{\"number\":2,\"bot\":true,\"mss\":\"DIRTY\",\"labels\":\"breaking\",\"upd\":\"$(ago '40 minutes')\"}]"
+jq '.breakingRebaseMinutes = 60' "$work/off.json" > "$work/off-m.json"
+out="$("$tend" --config "$work/off-m.json" --state "$ST" 2>&1)"; [ -z "$out" ]; check "breaking: breakingRebaseMinutes from config" $?
+reset; prs "[{\"number\":2,\"bot\":true,\"mss\":\"DIRTY\",\"labels\":\"breaking\",\"upd\":\"$(ago '40 minutes')\"}]"
+out="$("$tend" --config "$cfg" --state "$ST" 2>&1)"; [ "$(lines)" = 1 ] && grep -q "blocks the repository" <<<"$out"; check "breaking: dispatch mode behaves as before, plus the plain sentence" $?
+for bad in '.breakingLabel = ""' '.breakingLabel = 3' '.breakingRebaseMinutes = "x"' '.breakingRebaseMinutes = -1' '.breakingRetryHours = null' '.breakingRetryHours = "3"'; do
+  jq "$bad" "$cfg" > "$work/badb.json"
+  out="$("$tend" --config "$work/badb.json" --state "$ST" 2>&1)"; rc=$?
+  f="$(sed -E 's/^\.(\w+).*/\1/' <<<"$bad")"
+  [ $rc -eq 2 ] && grep -q "field '$f'" <<<"$out"; check "breaking: invalid config ($bad) -> exit 2 naming the field" $?
+done
 
 # ---- requeue transient chain failures ----
 reset; chain pr-pipeline-r-5 Failed 2026-01-01T00:00:00Z "Task was delivered to a knight that stopped before finishing it"
