@@ -68,6 +68,22 @@
           "additionalProperties": {"type": "array", "items": {"$ref": "#/$defs/knight"}}
         },
         "podsNotRunning": {"type": ["array", "null"], "items": {"$ref": "#/$defs/pod"}},
+        "operator": {
+          "description": "The operator pod (label app.kubernetes.io/name=roundtable-operator); null when it cannot be read. A Running chain step whose startedAt is before startedAt was in flight across an operator restart.",
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["podName", "startedAt", "restarts"],
+              "additionalProperties": false,
+              "properties": {
+                "podName": {"type": "string", "minLength": 1},
+                "startedAt": {"$ref": "#/$defs/optionalTimestamp"},
+                "restarts": {"type": "integer", "minimum": 0}
+              }
+            }
+          ]
+        },
         "prFeedback": {
           "description": "PR feedback watcher state, one entry per RoundTable with status.prFeedback; pull requests of the configured repositories only.",
           "type": ["array", "null"],
@@ -154,6 +170,22 @@
         "phase": {"type": "string", "minLength": 1},
         "startedAt": {"$ref": "#/$defs/optionalTimestamp"},
         "completedAt": {"$ref": "#/$defs/optionalTimestamp"},
+        "runningSteps": {
+          "description": "Only on chains in phase Running: steps that are neither Succeeded, Failed, Skipped nor Pending. pickedUpAt is null for a step no knight has picked up.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "phase", "taskId", "startedAt", "pickedUpAt"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "phase": {"type": "string"},
+              "taskId": {"type": ["string", "null"]},
+              "startedAt": {"$ref": "#/$defs/optionalTimestamp"},
+              "pickedUpAt": {"$ref": "#/$defs/optionalTimestamp"}
+            }
+          }
+        },
         "failedSteps": {
           "type": "array",
           "items": {

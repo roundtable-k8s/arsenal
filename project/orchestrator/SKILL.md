@@ -31,12 +31,21 @@ One JSON snapshot (schema: `scripts/status.schema.json`): per repository the
 open PRs (state, mergeability, newest `Verdict:` line, auto-merge, labels) and
 the issues labelled ready, in progress and needs-human; from the cluster the
 pipeline chains by phase with the failed step and its error, knights by phase,
-pods not running, and recently dead-lettered chain steps; `cluster.prFeedback`
+pods not running, the operator pod (`cluster.operator`: start time and restarts),
+the steps each running chain is on (`runningSteps`), and recently dead-lettered chain steps; `cluster.prFeedback`
 (the PR feedback watcher's state per table: its active run and, per PR, phase,
 failure kind and head commit) and `cluster.pickupHeld` (issue pickup is holding
 ready issues; the operator's `IssuePickupHeld` events of the last 15 minutes,
 with the reason in `message`). A section it could
 not read is `null` with an entry in `errors`: say so in the log, do not guess.
+
+In-flight work: a step in `runningSteps` whose `startedAt` is before
+`cluster.operator.startedAt` was in flight across an operator restart and can
+show no progress for a while. At first sight do not dispatch, requeue or alert
+on it; note `chain/taskId` in the log line `in flight:`. Treat it as stuck only
+when the same `taskId` is still running at the next check. `pickedUpAt: null`
+means no knight has picked the step up yet (the step timeout counts from
+pickup). If `cluster.operator` is `null`, you cannot tell: say so in the log.
 
 Everything below reads this snapshot. Re-run `status` only after you changed
 something and need to see the result.

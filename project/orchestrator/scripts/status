@@ -130,7 +130,7 @@ done
 
 # ---- Kubernetes ----
 kubectl="${KUBECTL:-kubectl}"
-chains=null; knights=null; pods=null; dead=null; prfeedback=null; held=null
+chains=null; knights=null; pods=null; operator=null; dead=null; prfeedback=null; held=null
 get() { "$kubectl" -n "$namespace" get "$1" -o json > "$tmp/$2" 2>"$tmp/err"; }
 if [ -z "$namespace" ]; then
   error cluster "no namespace configured"
@@ -144,7 +144,13 @@ else
         startedAt: (.status.startedAt // null), completedAt: (.status.completedAt // null),
         failedSteps: [.status.stepStatuses[]? | select(.phase == "Failed")
                       | {name, error: (.error // null), taskId: (.taskId // null)}]
-      }] | sort_by(.name) | reduce .[] as $c ({}; .[$c.phase] += [$c])' "$tmp/chains")"
+      } + (if (.status.phase // "") == "Running" then {
+        runningSteps: [.status.stepStatuses[]?
+          | select((.phase // "Pending") as $p | ["Succeeded","Failed","Skipped","Pending"] | index($p) | not)
+          | {name, phase, taskId: (.taskId // null), startedAt: (.startedAt // null),
+             pickedUpAt: (.pickedUpAt // null)}]
+      } else {} end)
+      ] | sort_by(.name) | reduce .[] as $c ({}; .[$c.phase] += [$c])' "$tmp/chains")"
     dead="$(jq -c --argjson m "$dl_minutes" '(now - $m * 60 | todate) as $since | {
         windowMinutes: $m, source: "chain-steps",
         tasks: [.items[] | .metadata.name as $c | .status.stepStatuses[]?
@@ -172,6 +178,16 @@ else
       }] | sort_by(.name)' "$tmp/pods")"
   else
     error cluster.podsNotRunning "$(reason "$tmp/err")"
+    error cluster.operator "$(reason "$tmp/err")"
+    pods_read=0
+  fi
+  if [ "${pods_read:-1}" = 1 ]; then
+    operator="$(jq -c '[.items[] | select(.metadata.labels["app.kubernetes.io/name"] == "roundtable-operator")]
+      | sort_by(.metadata.creationTimestamp) | last // null
+      | if . == null then null else {podName: .metadata.name,
+          startedAt: (.status.startTime // .metadata.creationTimestamp // null),
+          restarts: ([.status.containerStatuses[]? | .restartCount // 0] | add // 0)} end' "$tmp/pods")"
+    [ "$operator" != null ] || error cluster.operator "no pod with label app.kubernetes.io/name=roundtable-operator"
   fi
   if get roundtables.ai.roundtable.io roundtables; then
     prfeedback="$(jq -c --argjson repos "$(printf '%s\n' ${repos[@]+"${repos[@]}"} | jq -R . | jq -cs 'map(select(. != ""))')" '
@@ -201,7 +217,7 @@ fi
 jq -n \
   --slurpfile repos "$tmp/repos" --slurpfile errors "$tmp/errors" \
   --argjson labels "$labels" --arg ns "$namespace" --arg prefix "$prefix" \
-  --argjson chains "$chains" --argjson knights "$knights" --argjson pods "$pods" --argjson dead "$dead" \
+  --argjson chains "$chains" --argjson knights "$knights" --argjson pods "$pods" --argjson operator "$operator" --argjson dead "$dead" \
   --argjson prfeedback "$prfeedback" --argjson held "$held" \
   '{
     generatedAt: (now | todate),
@@ -209,7 +225,7 @@ jq -n \
              namespace: (if $ns == "" then null else $ns end), chainPrefix: $prefix},
     repositories: $repos,
     cluster: {namespace: (if $ns == "" then null else $ns end), chains: $chains,
-              knights: $knights, podsNotRunning: $pods, deadLettered: $dead,
+              knights: $knights, podsNotRunning: $pods, operator: $operator, deadLettered: $dead,
               prFeedback: $prfeedback, pickupHeld: $held},
     errors: $errors
   }'
