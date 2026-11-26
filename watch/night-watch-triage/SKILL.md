@@ -64,7 +64,7 @@ Every incident you see tonight gets a row (new) or an updated `last-seen`/`count
 
 Before dispatching anything:
 
-1. `grep <fp> $NIGHTWATCH_DIR/ledger.md` — if status is `dispatched`,
+1. `grep <fp> "$NIGHTWATCH_DIR/ledger.md"` — if status is `dispatched`,
    `fix-pr-open`, or `merged`, do NOT re-dispatch. Update `last-seen` and move on.
    If `verified` but now recurring, set `recurred` — it may be dispatched again.
 2. `kubectl get missions -n roundtable -l night-watch/fingerprint=<fp>` —

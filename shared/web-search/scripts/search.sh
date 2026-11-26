@@ -11,7 +11,7 @@ ENCODED_QUERY=$(printf '%s' "$QUERY" | sed 's/ /+/g; s/[^a-zA-Z0-9+._-]/%&/g')
 
 ERRFILE=$(mktemp); trap 'rm -f "$ERRFILE"' EXIT
 rc=0
-RESPONSE=$(curl -sf --max-time 15 "${SEARXNG_URL}/search?q=${ENCODED_QUERY}&format=json" 2>"$ERRFILE") || rc=$?
+RESPONSE=$(curl -sSf --max-time 15 "${SEARXNG_URL}/search?q=${ENCODED_QUERY}&format=json" 2>"$ERRFILE") || rc=$?
 
 if [ "$rc" -ne 0 ] || [ -z "$RESPONSE" ]; then
   detail=$(tr '\n' ' ' < "$ERRFILE" | sed 's/ *$//')

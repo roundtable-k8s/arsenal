@@ -2,7 +2,8 @@
 name: open-items-ledger
 description: >
   Protocol for the per-domain open-items ledger at
-  $BRIEFINGS_DIR/Ledger/<domain>.json. Replaces prose memory as the
+  /vault/Agents/Briefings/Ledger/<domain>.json (default root; override with
+  RT_BRIEFINGS_DIR). Replaces prose memory as the
   carry-forward mechanism for tracked items: Day-N counters are computed from
   first_seen, items are re-verified before being carried, and resolutions are
   recorded machine-readably so they can never be silently lost.
