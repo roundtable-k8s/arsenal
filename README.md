@@ -13,6 +13,7 @@ arsenal/
 │   ├── evidence-verification/ # Source/evidence checking
 │   ├── open-items-ledger/     # Carry-forward ledger protocol
 │   ├── report-generator/      # Template-based report rendering
+│   ├── side-by-side/          # Compare an old job's dated output with the new one
 │   ├── vault-indexer/         # Vault indexing helpers
 │   ├── web-browser/           # Headless browsing
 │   ├── web-search/            # SearXNG metasearch
