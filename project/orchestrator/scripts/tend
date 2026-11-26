@@ -19,7 +19,10 @@
 #            tend cannot reach another knight, so it records the request and
 #            prints `tend: dispatch-needed {"kind","knight","taskId","task"}`
 #            for the agent (or scripts/dispatch) to send. Once per head commit.
-#            Not done with `rebase: "off"` (see Config).
+#            Not done with `rebase: "off"` (see Config), except for a PR
+#            labelled breakingLabel that has not been updated for
+#            breakingRebaseMinutes. A breaking PR whose request is older than
+#            breakingRetryHours is asked for again (task id `...-retry<N>`).
 #   fix-check  open, non-draft, bot-authored PR, not conflicted, whose newest
 #            verdict is "ship it" and that has a failed required check on its
 #            head commit for longer than fixCheckMinutes: the PR is approved
@@ -60,8 +63,14 @@
 #   rebase       "dispatch" (default) or "off". "off" is for a table whose PR
 #                feedback watcher already rebases conflicted knight PRs: tend
 #                then prints and records no rebase request. Queueing is
-#                unchanged, and a DIRTY PR is still never queued. Any other
+#                unchanged, and a DIRTY PR is still never queued. A breaking
+#                PR (below) is still rebased once idle. Any other
 #                value is a usage error (exit 2).
+#   breakingLabel  label of a PR that holds issue pickup (default: breaking)
+#   breakingRebaseMinutes  with rebase "off", minutes a conflicting breaking
+#                bot PR must be untouched before tend asks (default: 30)
+#   breakingRetryHours  hours after which an unanswered rebase request for a
+#                breaking PR's head commit is repeated (default: 3)
 #   botAuthor    extra regex for bot PR author logins (gh's is_bot is used too)
 #   ciMaxAgeHours  only look at CI runs this recent (default: 24)
 #   fixCheckMinutes  minutes a required check must have been failed before
@@ -146,6 +155,18 @@ case "$rebase_json" in
   *) echo "tend: config field 'rebase' must be \"dispatch\" or \"off\", not $rebase_json" >&2; exit 2 ;;
 esac
 REBASE="$(jq -r . <<<"$rebase_json")"
+num_field() { # field default: a non-negative number, else usage error
+  local v; v="$(jq -c --arg f "$1" --argjson d "$2" 'if has($f) then .[$f] else $d end' "$config")"
+  jq -e 'type == "number" and . >= 0' <<<"$v" >/dev/null 2>&1 \
+    || { echo "tend: config field '$1' must be a non-negative number, not $v" >&2; return 2; }
+  echo "$v"
+}
+BREAKING_LABEL_JSON="$(jq -c 'if has("breakingLabel") then .breakingLabel else "breaking" end' "$config")"
+jq -e 'type == "string" and length > 0' <<<"$BREAKING_LABEL_JSON" >/dev/null 2>&1 \
+  || { echo "tend: config field 'breakingLabel' must be a non-empty string, not $BREAKING_LABEL_JSON" >&2; exit 2; }
+BREAKING_LABEL="$(jq -r . <<<"$BREAKING_LABEL_JSON")"
+BREAKING_REBASE_MINUTES="$(num_field breakingRebaseMinutes 30)" || exit 2
+BREAKING_RETRY_HOURS="$(num_field breakingRetryHours 3)" || exit 2
 mapfile -t repos < <(cfg '(.repos // .repositories // [])[] | if type == "string" then . else (.repo // .name) end')
 [ ${#repos[@]} -gt 0 ] || { echo "tend: no repos in '$config'" >&2; exit 2; }
 L_READY="$(cfg '.labels.ready // "rt:ready"')"
@@ -193,7 +214,7 @@ ship_it() { grep -qiE '^verdict:[[:space:]]*ship it([^[:alnum:]]|$)' <<<"$1"; }
 # ---- queue + rebase --------------------------------------------------------
 for repo in "${repos[@]}"; do
   prs="$(gh pr list -R "$repo" --state open --limit 200 \
-    --json number,url,isDraft,labels,autoMergeRequest,mergeStateStatus,headRefOid,author)" \
+    --json number,url,isDraft,labels,autoMergeRequest,mergeStateStatus,headRefOid,author,updatedAt)" \
     || { warn "could not list PRs of $repo"; continue; }
 
   # queue: ship-it PRs that are not queued
@@ -215,28 +236,45 @@ for repo in "${repos[@]}"; do
       | select([.labels[].name] | index($hold) | not)
       | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
 
-  # rebase: conflicted bot PRs (skipped when the PR feedback watcher owns them)
-  if [ "$REBASE" = dispatch ]; then
-    knight="$(jq -r --arg r "$repo" '.knights[$r] // .knights["*"] // ""' "$config")"
-    while IFS=$'\t' read -r num url sha; do
-      [ -n "$num" ] || continue
-      key="$repo#$num@$sha"
-      done_already rebase "$key" && continue
-      if [ -z "$knight" ]; then
-        record rebase "$key" '{"knight":null}'
-        say "$url conflicts with its base; no knight configured for $repo in knights, rebase it by hand"
-        continue
-      fi
-      task="$url conflicts with its base branch and nothing has rebased it. Rebase it onto the base branch, resolve the conflicts keeping both sides' intent, run the repo's CI commands (see its AGENTS.md), then push with --force-with-lease. Do not change behaviour beyond the conflict resolution. Do not queue or review. Reply \"<url> rebased <sha>\" or \"<url> blocked: <reason>\"."
-      msg="$(jq -nc --arg k "$knight" --arg id "rebase-${repo##*/}-$num-${sha:0:7}" --arg t "$task" \
-        '{kind: "rebase", knight: $k, taskId: $id, task: $t}')"
-      record rebase "$key" "$msg"
-      say "dispatch-needed $msg"
-    done < <(jq -r --arg bot "$BOT_RE" '.[]
-        | select((.isDraft | not) and .mergeStateStatus == "DIRTY")
-        | select(.author.is_bot == true or (($bot != "") and ((.author.login // "") | test($bot))))
-        | [.number, .url, .headRefOid] | @tsv' <<<"$prs")
-  fi
+  # rebase: conflicted bot PRs. With rebase "off" the PR feedback watcher owns
+  # them, except a breaking PR it has left untouched for breakingRebaseMinutes:
+  # that one blocks issue pickup for the whole repository. A breaking PR whose
+  # request was sent more than breakingRetryHours ago is asked for again.
+  knight="$(jq -r --arg r "$repo" '.knights[$r] // .knights["*"] // ""' "$config")"
+  while IFS=$'\t' read -r num url sha breaking age; do
+    [ -n "$num" ] || continue
+    if [ "$REBASE" = off ]; then
+      [ "$breaking" = 1 ] || continue
+      jq -ne --argjson a "$age" --argjson m "$BREAKING_REBASE_MINUTES" '$a >= 0 and $a > $m' >/dev/null || continue
+    fi
+    key="$repo#$num@$sha"
+    retry=0
+    if done_already rebase "$key"; then
+      [ "$breaking" = 1 ] || continue
+      jq -e --arg k "$key" --argjson h "$BREAKING_RETRY_HOURS" '.rebase[$k]
+          | .knight != null and ((now - (.at | fromdateiso8601)) / 3600 > $h)' <<<"$S" >/dev/null || continue
+      retry="$(jq -r --arg k "$key" '(.rebase[$k].retry // 0) + 1' <<<"$S")"
+    fi
+    if [ -z "$knight" ]; then
+      record rebase "$key" '{"knight":null}'
+      say "$url conflicts with its base; no knight configured for $repo in knights, rebase it by hand"
+      continue
+    fi
+    task="$url conflicts with its base branch and nothing has rebased it."
+    [ "$breaking" = 1 ] && task+=" This breaking PR blocks the repository's issue pickup."
+    [ "$retry" -gt 0 ] && task+=" An earlier rebase request for this head commit produced nothing."
+    task+=" Rebase it onto the base branch, resolve the conflicts keeping both sides' intent, run the repo's CI commands (see its AGENTS.md), then push with --force-with-lease. Do not change behaviour beyond the conflict resolution. Do not queue or review. Reply \"<url> rebased <sha>\" or \"<url> blocked: <reason>\"."
+    id="rebase-${repo##*/}-$num-${sha:0:7}"
+    [ "$retry" -gt 0 ] && id+="-retry$retry"
+    msg="$(jq -nc --arg k "$knight" --arg id "$id" --arg t "$task" \
+      '{kind: "rebase", knight: $k, taskId: $id, task: $t}')"
+    record rebase "$key" "$(jq -c --argjson r "$retry" 'if $r > 0 then . + {retry: $r} else . end' <<<"$msg")"
+    say "dispatch-needed $msg"
+  done < <(jq -r --arg bot "$BOT_RE" --arg bl "$BREAKING_LABEL" '.[]
+      | select((.isDraft | not) and .mergeStateStatus == "DIRTY")
+      | select(.author.is_bot == true or (($bot != "") and ((.author.login // "") | test($bot))))
+      | [.number, .url, .headRefOid, (if ([.labels[].name] | index($bl)) then 1 else 0 end),
+         (if .updatedAt then ((now - (.updatedAt | fromdateiso8601)) / 60 | floor) else -1 end)] | @tsv' <<<"$prs")
 done
 
 # ---- requeue transient chain failures --------------------------------------

@@ -9,6 +9,9 @@
   "namespace": "roundtable",
   "chainPrefix": "pr-pipeline-",
   "rebase": "dispatch",
+  "breakingLabel": "breaking",
+  "breakingRebaseMinutes": 30,
+  "breakingRetryHours": 3,
   "leadKnight": "rt-lead",
   "knights": {
     "example-org/dashboard": "rt-ui",

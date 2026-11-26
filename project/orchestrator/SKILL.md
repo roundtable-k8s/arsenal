@@ -58,8 +58,13 @@ failure for longer than `fixCheckMinutes` (default 20; the task names the PR,
 the failing check and its failed step and asks for the fix on the same branch;
 once per head commit). A table with PR feedback enabled sets
 `"rebase": "off"` in its config: the PR feedback watcher already rebases
-conflicted knight PRs, so tend must not ask again. Human PRs are not rebased by
-either.
+conflicted knight PRs, so tend must not ask again, with one exception: a
+conflicting bot PR labelled `breaking` (`breakingLabel`) holds issue pickup for
+its whole repository, so once its `updatedAt` is older than
+`breakingRebaseMinutes` (default 30) tend dispatches the rebase anyway. For a
+breaking PR, a rebase request older than `breakingRetryHours` (default 3) for
+the same head commit is repeated once per period (task id `…-retry<N>`). Human
+PRs are not rebased by either.
 
 `tend` cannot reach other knights. For every `tend: dispatch-needed {…}` line,
 send the `task` to the named `knight` with the NATS request tool. Exit 1 means a
