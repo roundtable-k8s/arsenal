@@ -86,13 +86,14 @@ spec:
 
 ### Native Tools
 
-Knights have three custom tools registered natively (not bash scripts):
+Knights have four custom tools registered natively (not bash scripts):
 
 - **`nats_publish`** — Fire-and-forget NATS messaging
 - **`nats_request`** — Cross-knight collaboration (send task, wait for response)
+- **`find_knights`** — Lists the knights at your table from their agent cards and status
 - **`spawn_subagent`** — In-process sub-agent for focused subtasks
 
-The `knight-comms` and `nats-comms` skills document when and how to use these tools.
+Use `find_knights` to see who is at your table before calling one with `nats_request`. The `chain-orchestration` project skill documents when and how to use these tools.
 
 ## Skill Format (agentskills.io)
 
