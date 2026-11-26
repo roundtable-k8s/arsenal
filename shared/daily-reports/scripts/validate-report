@@ -29,7 +29,7 @@ esac
 
 input="$(cat "$src")" || { echo "validate-report: cannot read $1" >&2; exit 2; }
 
-if ! printf '%s' "$input" | jq . >/dev/null 2>&1; then
+if ! printf '%s' "$input" | jq -s -e 'length == 1' >/dev/null 2>&1; then
   problems="$(printf '%s\n' '$: not valid JSON')"
 else
   # shellcheck disable=SC2016  # jq program, not shell

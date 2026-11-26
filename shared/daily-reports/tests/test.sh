@@ -33,9 +33,15 @@ expect_fail() {
 run "$V" "$good"; [ $rc -eq 0 ] && [ "$(last)" = "validate-report: ok" ]; check "SKILL.md example passes" $?
 [ ! -s "$work/err" ]; check "valid report prints nothing on stderr" $?
 run "$V" - < "$good"; [ $rc -eq 0 ] && [ "$(last)" = "validate-report: ok" ]; check "stdin works" $?
-for lit in null false; do
+for pair in null:null false:boolean; do
+  lit=${pair%%:*}; tn=${pair##*:}
   printf "%s" "$lit" > "$work/lit.json"; run "$V" "$work/lit.json"
-  [ $rc -eq 1 ] && grep -q "top level is $lit" "$work/err" 2>/dev/null || { [ $rc -eq 1 ] && ! grep -q "not valid JSON" "$work/err"; }; check "bare $lit is valid JSON but not an object" $?
+  [ $rc -eq 1 ] && grep -q "top level is $tn, not an object" "$work/err" && ! grep -q "not valid JSON" "$work/err"; check "bare $lit is valid JSON but not an object" $?
+done
+for case in empty whitespace multi; do
+  case $case in empty) printf '' ;; whitespace) printf ' \n\t\n' ;; multi) printf '{} {}' ;; esac > "$work/odd.json"
+  run "$V" "$work/odd.json"
+  [ $rc -eq 1 ] && grep -qF "not valid JSON" "$work/err" && [ "$(grep -c "not valid JSON" "$work/err")" -eq 1 ]; check "$case input fails as not valid JSON" $?
 done
 
 # ---- one failing case per rule ----
