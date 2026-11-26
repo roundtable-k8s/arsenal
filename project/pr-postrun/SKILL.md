@@ -12,7 +12,7 @@ arguments the step gives. Do not reimplement them with `gh` commands, and do not
 run them on your own initiative: they add `needs-human` and remove the
 in-progress label.
 
-All three: bash and `gh` only, token from `GH_TOKEN`. Options
+All three: bash, `gh` and `jq`, token from `GH_TOKEN`. Options
 `--in-progress-label` (default `rt:in-progress`) and `--needs-human-label`
 (default `needs-human`). Bad arguments exit 2 with a usage line. The **last
 output line** is the result; the chain checks it for `<script>: ok`. Re-running
