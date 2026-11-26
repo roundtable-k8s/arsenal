@@ -35,3 +35,6 @@ Part of #<epic> (if one fits).
 
 Title in conventional style (`feat(scope): …`, `fix(scope): …`, `docs(…): …`,
 `refactor(…): …`, `test(…): …`).
+
+Milestone and labels at creation: see the labels and milestones sections of
+`project/github-pm/SKILL.md`.
