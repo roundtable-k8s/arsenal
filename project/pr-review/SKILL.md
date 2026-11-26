@@ -44,4 +44,30 @@ bash /skills/project/pr-review/scripts/rt-review --no-queue https://github.com/r
 - Its last output line (`rt-review: posted 'Verdict: ...' on <url>; queued: ...`)
   is what to report in your final message.
 
-Tests: `bash project/pr-review/tests/test.sh` (uses a `gh` stub).
+## Reviewing
+
+Run `rt-checks` first. It reads the PR's required CI checks in one command:
+
+```bash
+bash /skills/project/pr-review/scripts/rt-checks https://github.com/roundtable-k8s/roundtable/pull/123
+```
+
+It prints one line per required check (`pass|fail|pending|skipping`, name, link);
+for a failed check it adds the failed step and the last 20 log lines (tokens
+redacted, or `log unavailable`). The last line decides what to do:
+
+- `rt-checks: pass`: do not re-run the repo's build or test suites. Cite the
+  check names in the review and spend the effort on the diff against the issue
+  and on whether the tests cover the change.
+- `rt-checks: fail`: the verdict is `needs_changes`; quote the failed step in
+  the review.
+- `rt-checks: pending`: review the diff, say CI is still running, and do not
+  wait (the rule not to wait for CI stays).
+- `rt-checks: none`: no required checks; run the repo's own commands from its
+  AGENTS.md.
+
+Exit codes: 0 for the four results, 2 for bad arguments, 1 when GitHub cannot
+be reached. `RT_CHECKS_LOG_TIMEOUT` (default 60 s) bounds each log read.
+
+Tests: `bash project/pr-review/tests/test.sh` (rt-review) and
+`bash project/pr-review/tests/rt-checks.test.sh` (rt-checks), both with a `gh` stub.

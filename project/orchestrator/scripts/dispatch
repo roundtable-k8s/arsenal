@@ -143,9 +143,9 @@ fi
 reply_review="Reply \"<url> ship it\", \"<url> needs changes\" or \"<url> blocked: <reason>\"."
 case "$kind" in
   review)
-    task="Review $url (head ${sha:0:7}) with the pr-review skill: read the linked issue and the diff, check the tests cover the change, then post your review with rt-review (ship_it or needs_changes). Do not push to the branch. $reply_review" ;;
+    task="Review $url (head ${sha:0:7}) with the pr-review skill: read the linked issue and the diff, check the tests cover the change, then post your review with rt-review (ship_it or needs_changes). Do not push to the branch. Read CI with rt-checks from the pr-review skill instead of re-running the suites. $reply_review" ;;
   re-review)
-    task="Re-review $url (head ${sha:0:7}) with the pr-review skill: a fix round was pushed after the last review. Check that every point of the previous review is addressed and nothing new broke, then post your review with rt-review (ship_it or needs_changes). Do not push to the branch. $reply_review" ;;
+    task="Re-review $url (head ${sha:0:7}) with the pr-review skill: a fix round was pushed after the last review. Check that every point of the previous review is addressed and nothing new broke, then post your review with rt-review (ship_it or needs_changes). Do not push to the branch. Read CI with rt-checks from the pr-review skill instead of re-running the suites. $reply_review" ;;
   fix)
     task="Address the review on $url (head ${sha:0:7}): read the newest \"Verdict: needs changes\" review and its comments, fix each point on the PR's branch, run the repo's CI commands (see its AGENTS.md), and push. Do not queue, merge or review the PR. Reply \"<url> pushed <sha>\" or \"<url> blocked: <reason>\"." ;;
 esac

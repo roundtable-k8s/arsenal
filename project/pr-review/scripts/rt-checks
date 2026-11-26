@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# rt-checks: read a PR's required CI checks in one command.
+#
+#   rt-checks <pr-url>
+#
+# Prints one line per required check: <pass|fail|pending|skipping> <name> <link>.
+# For each failed check it adds the failed step and the last 20 log lines of the
+# failed job (token-like strings redacted), or "log unavailable" when the log
+# cannot be read within RT_CHECKS_LOG_TIMEOUT seconds (default 60).
+# The last line is rt-checks: pass|fail|pending|none. Exit 0 for all four,
+# 2 for bad arguments, 1 when GitHub cannot be reached.
+set -uo pipefail
+
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+[ $# -eq 1 ] || usage
+url="$1"
+[[ "$url" =~ ^https://github\.com/[^/]+/[^/]+/pull/[0-9]+$ ]] \
+  || { echo "rt-checks: expected a PR URL like https://github.com/OWNER/REPO/pull/N, got '$url'" >&2; usage; }
+repo="$(sed -E 's#https://github.com/([^/]+/[^/]+)/pull/.*#\1#' <<<"$url")"
+num="${url##*/}"
+log_timeout="${RT_CHECKS_LOG_TIMEOUT:-60}"
+
+redact() { sed -E 's/(gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}/[redacted]/g'; }
+
+errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
+rc=0
+# gh pr checks exits 1 on a failed required check and 8 while pending: judge by the output.
+checks="$(gh pr checks "$num" -R "$repo" --required --json name,bucket,link 2>"$errf")" || rc=$?
+if ! jq -e 'type == "array"' <<<"$checks" >/dev/null 2>&1; then
+  if grep -qiE 'no required checks' "$errf"; then
+    checks='[]'
+  else
+    echo "rt-checks: could not read checks of $url (gh exit $rc)" >&2
+    redact < "$errf" >&2
+    exit 1
+  fi
+fi
+
+overall=none
+while IFS=$'\t' read -r bucket name link; do
+  [ -n "$bucket" ] || continue
+  [ "$bucket" = cancel ] && bucket=fail
+  printf '%s\t%s\t%s\n' "$bucket" "$name" "$link"
+  case "$bucket" in
+    fail) overall=fail ;;
+    pending) [ "$overall" = fail ] || overall=pending ;;
+    *) [ "$overall" = none ] && overall=pass ;;
+  esac
+  [ "$bucket" = fail ] || continue
+  runid="$(sed -nE 's#.*/actions/runs/([0-9]+).*#\1#p' <<<"$link")"
+  lrc=1; log=""
+  if [ -n "$runid" ]; then
+    lrc=0
+    log="$(timeout "$log_timeout" gh run view "$runid" -R "$repo" --log-failed 2>/dev/null)" || lrc=$?
+  fi
+  if [ "$lrc" -ne 0 ] || [ -z "$log" ]; then
+    echo "  log unavailable"
+    continue
+  fi
+  step="$(head -n 1 <<<"$log" | awk -F'\t' 'NF >= 2 {print $2}' | redact)"
+  echo "  failed step: ${step:-unknown}"
+  tail -n 20 <<<"$log" | redact | sed 's/^/  | /'
+done < <(jq -r '.[] | [.bucket, .name, (.link // "")] | @tsv' <<<"$checks")
+
+echo "rt-checks: $overall"
