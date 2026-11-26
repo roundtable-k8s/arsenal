@@ -70,7 +70,7 @@ Every daily report MUST be a JSON object matching this schema. See [`assets/cont
 | `timestamp` | string | ✅ | ISO-8601 when the report was generated |
 | `summary` | string | ✅ | 2-3 sentence executive summary |
 | `sections` | array | ✅ | One or more report sections (see below) |
-| `highlights` | array | ✅ | 3-5 bullet points for the morning briefing |
+| `highlights` | array | ✅ | 1-5 bullet points for the morning briefing |
 | `follow_up_needed` | boolean | ✅ | Does the user need to act on anything? |
 | `follow_up_questions` | array | ✅ | Questions the user might want answered (empty array if none) |
 
@@ -182,6 +182,18 @@ After generating the JSON, use [`assets/vault-template.md`](assets/vault-templat
   ]
 }
 ```
+
+## Validate before you finish
+
+Before saving or delivering the JSON, check it against the contract (needs `jq` only):
+
+```bash
+shared/daily-reports/scripts/validate-report report.json   # or "-" for stdin
+```
+
+Exit 0 and a last line `validate-report: ok` means the report is valid. Exit 1 lists every problem on stderr with its JSON path and ends stdout with `Outcome: failed report invalid: <first problem>`; a report that prints `Outcome: failed` is **not delivered** — fix it and re-run. Exit 2 means bad arguments or an unreadable file.
+
+Tests for the validator (including a check that it matches `assets/contract.schema.json`): `bash shared/daily-reports/tests/test.sh`.
 
 ## Integration
 
