@@ -35,12 +35,19 @@ If you cannot create a PR (permissions error, no push access), your result **MUS
 4. Read relevant source files to understand patterns
 5. Create a feature branch: git checkout -b <type>/<description>
 6. Write implementation + tests
-7. Build and test locally
+7. Build and test locally: the narrowest test first; the full suite once, at the end
 8. Commit with descriptive message
-9. Push: git push -u origin <branch>
-10. Open PR: gh pr create --title "..." --body "..."
-11. Include PR URL in your result
+9. As soon as the first commit builds, push and open a draft PR: git push -u origin <branch>, then gh pr create --draft --title "..." --body "..."
+10. Commit and push after each later change
+11. Run the full suite once and read its output; then mark the PR ready and update its body. Include the PR URL in your result
 ```
+
+## Finish inside the turn
+
+- After the first commit that builds, push the branch (`git push -u origin <branch>`) and open the PR as a draft (`gh pr create --draft`). Keep pushing after each later commit. A task that runs out of time must leave its work on the remote.
+- While iterating, run the narrowest test (one package, one file, `-run <name>`). Run the full suite once, at the end, and read its output instead of re-running it.
+- Never end a turn while a command you started in the background is still running: wait for it to finish (or stop it), then push. A final message such as "tests are running in the background" loses the work.
+- If the time limit in the task prompt (when there is one) is nearly used up, stop testing, push what builds, and say in the final message what is untested.
 
 ## What the pod cannot do
 

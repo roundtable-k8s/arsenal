@@ -16,5 +16,18 @@ for f in coding/roundtable-operator/SKILL.md coding/pi-knight-runtime/SKILL.md \
   grep -q 'env -i' "$f" \
     || { echo "FAIL: $f lacks the clean-environment command (env -i)"; fail=1; }
 done
+# Each dev-knight skill must say, once, how to finish inside the turn: push early,
+# run the full suite once, and never end a turn with background work.
+for f in coding/coding-agent.md coding/night-watch-fix/SKILL.md \
+         coding/roundtable-operator/SKILL.md coding/roundtable-ui/SKILL.md \
+         coding/pi-knight-runtime/SKILL.md coding/roundtable-arsenal/SKILL.md; do
+  if [ ! -f "$f" ]; then
+    echo "FAIL: $f missing"; fail=1; continue
+  fi
+  n=$(grep -c '^## Finish inside the turn$' "$f")
+  [ "$n" -eq 1 ] || { echo "FAIL: $f has $n \"Finish inside the turn\" headings, want 1"; fail=1; }
+  grep -q 'Never end a turn while a command you started in the background' "$f" \
+    || { echo "FAIL: $f lacks the background-command rule"; fail=1; }
+done
 [ $fail -eq 0 ] && echo "ok: coding skills"
 exit $fail
