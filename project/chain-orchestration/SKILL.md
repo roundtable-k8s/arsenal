@@ -15,9 +15,9 @@ All knights work simultaneously on independent sub-tasks. Use when tasks don't d
 
 ```
 Mission: "Morning security briefing"
-├── Galahad: "Daily threat landscape summary"     ─┐
-├── Tristan: "Cluster health and recent changes"  ─┤── Aggregate
-├── Kay: "Trending security news"                 ─┘
+├── <security knight>: "Daily threat landscape summary"     ─┐
+├── <infra knight>: "Cluster health and recent changes"     ─┤── Aggregate
+├── <research knight>: "Trending security news"             ─┘
 ```
 
 ### Sequential Pipeline
@@ -25,9 +25,9 @@ Each knight's output feeds the next knight's input. Use when tasks build on each
 
 ```
 Mission: "Evaluate CVE-2024-XXXX impact"
-1. Galahad: "Analyze CVE details and affected components"
-2. Tristan: "Check if affected versions are in our cluster" (gets Galahad's output)
-3. Bedivere: "Draft remediation timeline and notify the user" (gets both outputs)
+1. <security knight>: "Analyze CVE details and affected components"
+2. <infra knight>: "Check if affected versions are in our cluster" (gets step 1's output)
+3. <home knight>: "Draft remediation timeline and notify the user" (gets both outputs)
 ```
 
 ### Fan-Out → Synthesize
@@ -35,28 +35,29 @@ Parallel first, then one knight synthesizes. The most common pattern.
 
 ```
 Mission: "Baby prep status"
-├── Bedivere: "Nursery completion status"          ─┐
-├── Percival: "Baby-related expenses this month"   ─┤── You synthesize
-├── Gareth: "Upcoming prenatal appointments"       ─┘
+├── <home knight>: "Nursery completion status"           ─┐
+├── <finance knight>: "Baby-related expenses this month" ─┤── You synthesize
+├── <wellness knight>: "Upcoming prenatal appointments"  ─┘
 ```
 
 ## How to Dispatch
 
-Use `nats_request` from your `knight-comms` skill for each sub-task:
+1. **Discover** who is at your table with `find_knights` (parameters: `query`, `domain`, `skill`, `includeSuspended`). Each result carries a `status` (ready, suspended, not ready; `live` when a pod answered just now). Pick knights whose status is usable.
+2. **Call** each one with `nats_request` (parameters: `knight`, optional `domain`, `task`, optional `timeout_ms`). When `domain` is omitted it is looked up from the knight's agent card, so the knight's name is usually enough.
 
 ```
-// Parallel: fire all at once conceptually — but nats_request is blocking,
-// so dispatch sequentially and collect. The knights process in parallel
-// because each has its own consumer.
+// Parallel: nats_request blocks, so issue the calls one after another.
+// The knights process in parallel because each has its own consumer.
 
-result_galahad = nats_request(
-  knight: "galahad", domain: "security",
-  task: "Summarize today's threat landscape. Focus on critical CVEs and active campaigns. Do not delegate to other knights.",
-  timeout_ms: 300000
+find_knights(domain: "security")   // -> pick the knight named in the result
+
+result_a = nats_request(
+  knight: "<security knight>",
+  task: "Summarize today's threat landscape. Focus on critical CVEs and active campaigns. Do not delegate to other knights."
 )
 
-result_tristan = nats_request(
-  knight: "tristan", domain: "infra",
+result_b = nats_request(
+  knight: "<infra knight>",
   task: "Report cluster health: pod status, recent deployments, any alerts. Do not delegate to other knights.",
   timeout_ms: 180000
 )
@@ -65,12 +66,14 @@ result_tristan = nats_request(
 For sequential chains, include prior results in the next task:
 
 ```
-result_galahad = nats_request(knight: "galahad", domain: "security",
-  task: "Analyze CVE-2024-XXXX: affected software, severity, exploit status.")
+result_a = nats_request(knight: "<security knight>",
+  task: "Analyze CVE-2024-XXXX: affected software, severity, exploit status. Do not delegate to other knights.")
 
-result_tristan = nats_request(knight: "tristan", domain: "infra",
-  task: "Based on this CVE analysis, check if we're affected:\n\n" + result_galahad)
+result_b = nats_request(knight: "<infra knight>",
+  task: "Based on this CVE analysis, check if we're affected. Do not delegate to other knights.\n\n" + result_a)
 ```
+
+**Use a Chain instead** when the same steps will run again: if the steps are fixed and repeated, ask for a Chain by name rather than hand-dispatching them each time. Ad-hoc `nats_request` fan-out suits one-off missions.
 
 ## Aggregation
 
@@ -109,24 +112,15 @@ Key findings from this knight...
 One paragraph executive summary.
 ```
 
-## Knight Directory
+## Finding Knights
 
-| Knight | Domain | NATS Subject | Specialty | Timeout |
-|--------|--------|-------------|-----------|---------|
-| Galahad | security | `fleet-a.tasks.security.>` | Threat intel, CVEs, OpenCTI | 300s |
-| Kay | research | `fleet-a.tasks.research.>` | Deep research, news, media | 300s |
-| Tristan | infra | `fleet-a.tasks.infra.>` | Cluster health, Flux, k8s | 180s |
-| Lancelot | career | `fleet-a.tasks.career.>` | Interviews, professional | 240s |
-| Percival | finance | `fleet-a.tasks.finance.>` | Tax, budgets, Paperless | 180s |
-| Bedivere | home | `fleet-a.tasks.home.>` | Home Assistant, family | 180s |
-| Patsy | vault | `fleet-a.tasks.vault.>` | Obsidian vault curation | 180s |
-| Agravain | pentest | `fleet-a.tasks.pentest.>` | Offensive security, recon | 300s |
-| Gareth | wellness | `fleet-a.tasks.wellness.>` | Baby/family wellness | 180s |
+Do not keep a hard-coded roster. Call `find_knights` at the start of each chain to see who is at your table, their domains, skills and status. Use the returned `domain` and name in `nats_request`.
 
 ## Constraints
 
 - **Always include "Do not delegate to other knights"** in sub-tasks to prevent infinite chains
-- **Cost awareness** — each knight call costs ~$0.01-0.10. A 5-knight chain is ~$0.05-0.50
-- **Timeout** — respect each knight's timeout. Don't send 300s tasks to 180s knights
+- **Stay in your table** — `nats_request` only reaches knights that share your NATS prefix; cross-table requests time out
+- **Cost awareness** — every knight call is a model call. Keep fan-outs to the knights the mission needs
+- **Timeout** — the `nats_request` default is 10 minutes. Set `timeout_ms` only when a task is clearly shorter or longer, and keep it within what the target knight can finish
 - **Concurrency** — `nats_request` is blocking, but knights process independently. Order of dispatch matters for sequential chains, not for parallel ones.
-- **Error handling** — if a knight times out, note it and continue with available results
+- **Error handling** — if a knight times out or is not ready, note it and continue with available results
