@@ -46,6 +46,20 @@ created: 2026-03-15
 # Person
 N
 printf '# no frontmatter\n' > "$vault/Notes/plain.md"
+# a body after the frontmatter, including a line that is not valid YAML
+cat > "$vault/Notes/body-note.md" <<'N'
+---
+title: Body note
+type: note
+tags: [indexer-body, kube-body, indexer-body]
+created: 2026-03-20
+---
+# Body
+see: this: is not yaml
+N
+# names that differ only in the characters LIKE treats as wildcards
+printf '# underscore\n' > "$vault/Notes/a_b.md"
+printf '# letter\n' > "$vault/Notes/aXb.md"
 # --since/--until match created OR modified, so pin mtimes to the created dates
 touch -d 2026-03-01 "$vault/Briefings/Daily/2026-03-01.md"
 touch -d 2026-04-01 "$vault/Briefings/Daily/2026-04-01.md"
@@ -134,5 +148,34 @@ for bad in corrupt wrong; do
     out=$(bash "$scripts/recent-notes.sh" --db "$tmp/$bad.db" 2>&1); rc=$?
     check "recent $bad db exits 1, no 'No results'" $([[ $rc -eq 1 && "$out" == *"Error:"* && "$out" != *"No results"* ]]; echo $?)
 done
+
+# frontmatter tags survive a body that is not valid YAML, duplicates included
+out=$(q --tag indexer-body --format paths 2>&1); rc=$?
+check "tags from a note with a body are indexed" $([[ $rc -eq 0 && "$out" == *body-note.md* ]]; echo $?)
+
+out=$(q --tag kube-body --format json 2>&1); rc=$?
+check "json output carries the body note's tags" $([[ $rc -eq 0 && "$out" == *'"indexer-body"'* && "$out" == *'"kube-body"'* ]]; echo $?)
+
+out=$(q --tag kube-body 2>&1); rc=$?
+check "table output shows the body note with its tags" $([[ $rc -eq 0 && "$out" == *body-note.md* && "$out" == *indexer-body* && "$out" == *kube-body* ]]; echo $?)
+
+out=$(q --tag kube-body --format csv 2>&1); rc=$?
+check "csv output carries the body note's tags" $([[ $rc -eq 0 && "$out" == *'body-note.md'* && "$out" == *indexer-body* && "$out" == *kube-body* ]]; echo $?)
+
+out=$(q --path "a_b" --format paths 2>&1); rc=$?
+check "--path '_' matches only a literal underscore" $([[ $rc -eq 0 && "$out" == *"a_b.md"* && "$out" != *"aXb.md"* ]]; echo $?)
+
+out=$(q --path "%" --format paths 2>&1); rc=$?
+check "--path '%' matches only a literal percent sign" $([[ $rc -eq 0 && "$out" == *"No results found"* ]]; echo $?)
+
+# a failing tag lookup must exit 1 with Error:, never show an empty tag column
+cp "$db" "$tmp/notags.db"
+sqlite3 "$tmp/notags.db" "DROP TABLE tags;" >/dev/null 2>&1
+for fmt in table json csv; do
+    out=$(bash "$scripts/query-vault.sh" --db "$tmp/notags.db" --format $fmt 2>&1); rc=$?
+    check "query $fmt: failed tag lookup exits 1 with Error:" $([[ $rc -eq 1 && "$out" == *"Error:"* ]]; echo $?)
+done
+out=$(bash "$scripts/recent-notes.sh" --db "$tmp/notags.db" --format json 2>&1); rc=$?
+check "recent json: failed tag lookup exits 1 with Error:" $([[ $rc -eq 1 && "$out" == *"Error:"* ]]; echo $?)
 
 echo "$n tests, $fails failed"; [ "$fails" -eq 0 ]

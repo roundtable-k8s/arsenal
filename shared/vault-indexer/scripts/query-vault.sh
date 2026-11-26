@@ -91,7 +91,7 @@ Query vault index with filters and output in various formats.
 
 OPTIONS:
     --tag TAG              Filter by tag (can specify multiple)
-    --path PATH            Filter by path pattern (SQL LIKE)
+    --path PATH            Notes whose path contains PATH (literal; % and _ match only themselves)
     --since DATE           Notes created/modified >= DATE (YYYY-MM-DD)
     --until DATE           Notes created/modified <= DATE
     --days N               Notes from last N days
@@ -110,10 +110,10 @@ EXAMPLES:
     query-vault.sh --tag security --days 7 --type briefing
 
     # All notes in Daily briefings folder
-    query-vault.sh --path "Briefings/Daily%"
+    query-vault.sh --path "Briefings/Daily"
 
     # Knight assessments from March
-    query-vault.sh --path "Briefings/Knights%" --since 2026-03-01
+    query-vault.sh --path "Briefings/Knights" --since 2026-03-01
 
     # Notes without tags (needs cleanup)
     query-vault.sh --no-tags
@@ -143,10 +143,36 @@ sql_escape() {
     printf '%s' "${1//\'/\'\'}"
 }
 
+# Escape LIKE wildcards (and the escape character) so a value matches literally.
+# Used with ESCAPE '\' in the LIKE clause.
+like_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//%/\\%}"
+    s="${s//_/\\_}"
+    printf '%s' "$s"
+}
+
 # Fail with an Error: line and exit 1
 die() {
     echo -e "${RED}Error: $*${NC}" >&2
     exit 1
+}
+
+# Print the result of a single-value SQL lookup. A sqlite failure is an error:
+# it prints Error: and exits 1 instead of showing an empty value.
+# Call as: out=$(sql_value "SELECT ...") || exit 1
+sql_value() {
+    local out errfile rc=0
+    errfile=$(mktemp)
+    out=$(sqlite3 "$DB_PATH" "$1" 2>"$errfile") || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        echo -e "${RED}Error: tag lookup failed: $(cat "$errfile")${NC}" >&2
+        rm -f "$errfile"
+        return 1
+    fi
+    rm -f "$errfile"
+    printf '%s' "$out"
 }
 
 # Check database exists
@@ -172,7 +198,7 @@ esac
 
 # Build SQL query
 build_query() {
-    local query="SELECT DISTINCT n.path, n.filename, n.title, n.created, n.modified, n.type, n.size_bytes, n.word_count FROM notes n"
+    local query="SELECT DISTINCT n.path, n.filename, n.title, n.created, n.modified, n.type, n.size_bytes, n.word_count, n.id FROM notes n"
     local joins=""
     local where_clauses=()
     
@@ -186,7 +212,7 @@ build_query() {
     
     # Path filters
     for path in "${PATHS[@]}"; do
-        where_clauses+=("n.path LIKE '%$(sql_escape "$path")%'")
+        where_clauses+=("n.path LIKE '%$(sql_escape "$(like_escape "$path")")%' ESCAPE '\\'")
     done
     
     # Date filters
@@ -250,10 +276,10 @@ format_table() {
     echo -e "${CYAN}$header${NC}"
     echo "----------------------------------------"
     
-    while IFS='|' read -r path created type size_bytes note_id; do
+    while IFS='|' read -r path filename title created modified type size_bytes word_count note_id; do
         # Get tags for this note
         local tags
-        tags=$(sqlite3 "$DB_PATH" "SELECT GROUP_CONCAT(tag, ', ') FROM tags WHERE note_id = $note_id" 2>/dev/null || echo "")
+        tags=$(sql_value "SELECT GROUP_CONCAT(tag, ', ') FROM tags WHERE note_id = $note_id") || exit 1
         
         # Format size
         local size_human
@@ -289,7 +315,7 @@ format_json() {
     while IFS='|' read -r path filename title created modified type size_bytes word_count note_id; do
         # Get tags for this note
         local tags_json
-        tags_json=$(sqlite3 "$DB_PATH" "SELECT json_group_array(tag) FROM tags WHERE note_id = $note_id" 2>/dev/null || echo "[]")
+        tags_json=$(sql_value "SELECT json_group_array(tag) FROM tags WHERE note_id = $note_id") || exit 1
         
         if [[ $first -eq 0 ]]; then
             echo ","
@@ -322,7 +348,7 @@ format_csv() {
     while IFS='|' read -r path filename title created modified type size_bytes word_count note_id; do
         # Get tags for this note
         local tags
-        tags=$(sqlite3 "$DB_PATH" "SELECT GROUP_CONCAT(tag, ';') FROM tags WHERE note_id = $note_id" 2>/dev/null || echo "")
+        tags=$(sql_value "SELECT GROUP_CONCAT(tag, ';') FROM tags WHERE note_id = $note_id") || exit 1
         
         # Escape quotes in fields
         path="${path//\"/\"\"}"
@@ -345,10 +371,7 @@ format_paths() {
 execute_query() {
     local query
     query=$(build_query)
-    
-    # Add note_id to query for tag lookup
-    query="${query/SELECT DISTINCT n.path/SELECT DISTINCT n.path, n.filename, n.title, n.created, n.modified, n.type, n.size_bytes, n.word_count, n.id}"
-    
+
     local results
     local errfile rc=0
     errfile=$(mktemp)

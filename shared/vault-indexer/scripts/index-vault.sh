@@ -212,6 +212,22 @@ SQL
     log_success "Database schema initialized"
 }
 
+# Evaluate one expression against the frontmatter of a markdown file. Only the
+# frontmatter document is read, so the body never adds a second result line.
+# A yq error is logged with the note path and the output it produced is kept.
+yq_frontmatter() {
+    local filepath="$1" relpath="$2" expr="$3"
+    local out errfile rc=0
+    errfile="$(mktemp)"
+    out=$($YQ_CMD eval --front-matter=extract "$expr" "$filepath" 2>"$errfile") || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        log_warn "frontmatter read failed for $relpath: $(head -n1 "$errfile")"
+    fi
+    rm -f "$errfile"
+    # Keep the first line only; the expressions here yield one value
+    printf '%s' "${out%%$'\n'*}"
+}
+
 # Extract frontmatter and metadata from a markdown file
 index_file() {
     local filepath="$1"
@@ -263,11 +279,12 @@ index_file() {
         has_frontmatter=1
         
         # Extract frontmatter fields with yq (it can handle YAML in markdown)
-        created=$($YQ_CMD eval '.created // ""' "$filepath" 2>/dev/null | head -n1 || echo "")
-        type=$($YQ_CMD eval '.type // ""' "$filepath" 2>/dev/null | head -n1 || echo "")
-        
+        created=$(yq_frontmatter "$filepath" "$relpath" '.created // ""')
+        type=$(yq_frontmatter "$filepath" "$relpath" '.type // ""')
+
         # Extract tags as JSON array
-        tags_json=$($YQ_CMD eval '.tags // [] | @json' "$filepath" 2>/dev/null | head -n1 || echo "[]")
+        tags_json=$(yq_frontmatter "$filepath" "$relpath" '.tags // [] | @json')
+        [[ -n "$tags_json" ]] || tags_json="[]"
     fi
     
     # If no title from frontmatter, try first H1
@@ -310,15 +327,19 @@ DELETE FROM links WHERE source_id = $note_id;
 SQL
     
     # Insert tags
+    # Failures are reported (python and sqlite3 write their errors to stderr).
+    # OR IGNORE keeps a repeated tag in the frontmatter from aborting the rest.
     if [[ "$tags_json" != "[]" && "$tags_json" != "null" ]]; then
-        echo "$tags_json" | python3 -c "
+        if ! echo "$tags_json" | python3 -c "
 import json, sys
 tags = json.load(sys.stdin)
 if isinstance(tags, list):
     for tag in tags:
-        tag_clean = tag.replace(\"'\", \"''\")
-        print(f\"INSERT INTO tags (note_id, tag) VALUES ($note_id, '{tag_clean}');\")
-" | sqlite3 "$DB_PATH" 2>/dev/null || true
+        tag_clean = str(tag).replace(\"'\", \"''\")
+        print(f\"INSERT OR IGNORE INTO tags (note_id, tag) VALUES ($note_id, '{tag_clean}');\")
+" | sqlite3 "$DB_PATH"; then
+            log_warn "could not index tags for $relpath"
+        fi
     fi
     
     # Insert links

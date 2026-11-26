@@ -56,7 +56,7 @@ Show recently modified notes from the vault index.
 
 OPTIONS:
     --limit N, -n N        Show N most recent notes (default: 10)
-    --path PATH            Filter by path pattern
+    --path PATH            Notes whose path contains PATH (literal; % and _ match only themselves)
     --tag TAG              Filter by tag (can specify multiple)
     --since DATE           Only show notes modified since DATE (YYYY-MM-DD)
     --format FMT, -f FMT   Output format: table, json, csv, paths (default: table)
@@ -98,10 +98,36 @@ sql_escape() {
     printf '%s' "${1//\'/\'\'}"
 }
 
+# Escape LIKE wildcards (and the escape character) so a value matches literally.
+# Used with ESCAPE '\' in the LIKE clause.
+like_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//%/\\%}"
+    s="${s//_/\\_}"
+    printf '%s' "$s"
+}
+
 # Fail with an Error: line and exit 1
 die() {
     echo -e "${RED}Error: $*${NC}" >&2
     exit 1
+}
+
+# Print the result of a single-value SQL lookup. A sqlite failure is an error:
+# it prints Error: and exits 1 instead of showing an empty value.
+# Call as: out=$(sql_value "SELECT ...") || exit 1
+sql_value() {
+    local out errfile rc=0
+    errfile=$(mktemp)
+    out=$(sqlite3 "$DB_PATH" "$1" 2>"$errfile") || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        echo -e "${RED}Error: tag lookup failed: $(cat "$errfile")${NC}" >&2
+        rm -f "$errfile"
+        return 1
+    fi
+    rm -f "$errfile"
+    printf '%s' "$out"
 }
 
 # Check database exists
@@ -130,7 +156,7 @@ build_query() {
     
     # Path filters
     for path in "${PATHS[@]}"; do
-        where_clauses+=("n.path LIKE '%$(sql_escape "$path")%'")
+        where_clauses+=("n.path LIKE '%$(sql_escape "$(like_escape "$path")")%' ESCAPE '\\'")
     done
     
     # Since filter
@@ -206,7 +232,7 @@ format_json() {
     while IFS='|' read -r note_id path filename title modified size_bytes word_count; do
         # Get tags for this note
         local tags_json
-        tags_json=$(sqlite3 "$DB_PATH" "SELECT json_group_array(tag) FROM tags WHERE note_id = $note_id" 2>/dev/null || echo "[]")
+        tags_json=$(sql_value "SELECT json_group_array(tag) FROM tags WHERE note_id = $note_id") || exit 1
         
         if [[ $first -eq 0 ]]; then
             echo ","
