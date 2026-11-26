@@ -112,10 +112,11 @@ EOF
       {repo:"example-org/service",number:12,phase:"Watching"},
       {repo:"other-org/elsewhere",number:3,phase:"Queued",failureKind:"ci",failureHeadSHA:"zzz"}]}}},
     {metadata:{name:"table-b"}, status:{phase:"Ready"}}]}' > "$FIX/k8s/roundtables.ai.roundtable.io.json"
-  jq -n --arg recent "$(ago 120)" --arg newer "$(ago 30)" --arg old "$(ago 3600)" '{items: [
+  jq -n --arg recent "$(ago 120)" --arg newer "$(ago 30)" --arg old "$(ago 3600)" --arg mid "$(ago 60)" '{items: [
     {reason:"IssuePickupHeld", involvedObject:{kind:"RoundTable",name:"table-a"}, count:7, lastTimestamp:$recent,
      message:"example-org/service: 4 ready issue(s) held, open breaking PR(s): #618 (rt/610-trigger-cronjobs)"},
     {reason:"IssuePickupHeld", involvedObject:{kind:"RoundTable",name:"table-c"}, lastTimestamp:$newer, message:"newer hold"},
+    {reason:"IssuePickupHeld", involvedObject:{kind:"RoundTable",name:"table-d"}, count:0, lastTimestamp:$mid, message:"zero count"},
     {reason:"IssuePickupHeld", involvedObject:{kind:"RoundTable",name:"table-b"}, count:2, lastTimestamp:$old, message:"old hold"},
     {reason:"Other", involvedObject:{kind:"RoundTable",name:"table-a"}, lastTimestamp:$newer, message:"unrelated"}]}' > "$FIX/k8s/events.json"
   cat > "$FIX/k8s/pods.json" <<'EOF'
@@ -194,8 +195,8 @@ q '.cluster.prFeedback | length == 1 and .[0].table == "table-a" and .[0].active
      and .[0].pullRequests[1].failureKind == null and .[0].pullRequests[1].headSha == null'
 check "prFeedback: table with status.prFeedback, other repositories dropped, table without it omitted" $?
 logged "kubectl -n roundtable get roundtables.ai.roundtable.io -o json"; check "kubectl reads roundtables" $?
-q '.cluster.pickupHeld | map(.table) == ["table-c","table-a"] and .[1].count == 7 and .[0].count == 1
-     and (.[1].message | startswith("example-org/service: 4 ready issue(s) held"))'
+q '.cluster.pickupHeld | map(.table) == ["table-c","table-d","table-a"] and .[2].count == 7 and .[0].count == 1 and .[1].count == 1
+     and (.[2].message | startswith("example-org/service: 4 ready issue(s) held"))'
 check "pickupHeld: recent events newest first, old and other reasons dropped" $?
 logged "get events --field-selector reason=IssuePickupHeld"; check "kubectl reads IssuePickupHeld events" $?
 
@@ -203,7 +204,7 @@ logged "get events --field-selector reason=IssuePickupHeld"; check "kubectl read
 fixtures; touch "$FIX/k8s/forbid-roundtables.ai.roundtable.io"
 run "$status" --config "$skill/config.example.json"
 [ $rc -eq 0 ] && valid; check "roundtables forbidden: exits 0 and validates" $?
-q '.cluster.prFeedback == null and (.cluster.pickupHeld | length) == 2 and (.cluster.chains.Running | length) == 1
+q '.cluster.prFeedback == null and (.cluster.pickupHeld | length) == 3 and (.cluster.chains.Running | length) == 1
    and (.errors | length) == 1 and .errors[0].section == "cluster.prFeedback" and (.errors[0].message | startswith("Error from server (Forbidden)"))'
 check "roundtables forbidden: prFeedback null with an error, other sections read" $?
 fixtures; touch "$FIX/k8s/forbid-events"

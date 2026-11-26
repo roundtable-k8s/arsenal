@@ -44,7 +44,8 @@ case "$1" in
         [ -e "$FIX/net-run-view" ] && { echo "error downloading logs: dial tcp 140.82.112.6:443: i/o timeout" >&2; exit 1; }
         [ -e "$FIX/net-run-$3" ] && { echo "error downloading logs: dial tcp 140.82.112.6:443: i/o timeout" >&2; exit 1; }
         [ -e "$FIX/slow-run-view" ] && exec sleep 5
-        cat "$FIX/log-$3.txt" ;;
+        job=""; pv=""; for a in "$@"; do [ "$pv" = --job ] && job="$a"; pv="$a"; done
+        if [ -n "$job" ] && [ -e "$FIX/log-$3-job-$job.txt" ]; then cat "$FIX/log-$3-job-$job.txt"; else cat "$FIX/log-$3.txt"; fi ;;
       "pr checks") [ -e "$FIX/checks-$repo-$3.json" ] && cat "$FIX/checks-$repo-$3.json" || echo '[]'; [ -e "$FIX/checks-exit1" ] && exit 1 ;;
       "pr merge"|"issue edit"|"issue comment"|"run rerun") : ;;
       *) echo "unexpected gh $*" >&2; exit 1 ;;
@@ -305,7 +306,7 @@ out="$("$tend" --config "$work/off2.json" --state "$ST" 2>&1)"; rc=$?
 # ---- fix-check ----
 ago() { date -u -d "-$1 minutes" +%Y-%m-%dT%H:%M:%SZ; }
 checks() { # n minutes-ago bucket [run-id]
-  jq -nc --arg t "$(ago "$2")" --arg b "$3" --arg l "https://github.com/o/r/actions/runs/${4:-900}/job/1" \
+  jq -nc --arg t "$(ago "$2")" --arg b "$3" --arg l "https://github.com/o/r/actions/runs/${4:-900}/job/${5:-1}" \
     '[{name: "helm-check", bucket: $b, link: $l, completedAt: $t}, {name: "lint", bucket: "pass", link: "https://github.com/o/r/actions/runs/901/job/2", completedAt: $t}]' \
     > "$FIX/checks-o_r-$1.json"
   touch "$FIX/checks-exit1"
@@ -317,6 +318,25 @@ j="${out#tend: dispatch-needed }"; jq -e '.task | contains("https://github.com/o
 jq -e '.fixcheck["o/r#1@abcdef1234567"].knight == "coder-knight"' "$ST" >/dev/null; check "fix-check: recorded in state by head commit" $?
 again; [ -z "$out" ]; check "fix-check: second run on the same head does nothing" $?
 prs '[{"number":1,"bot":true,"auto":true,"sha":"fedcba9876543"}]'; again; [ "$(lines)" = 1 ] && grep -q '"taskId":"fix-check-r-1-fedcba9"' <<<"$out"; check "fix-check: a new head commit asks again" $?
+
+# job-scoped log: run 900 has two failed jobs, only job 1's check fails
+reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 60 fail
+printf 'other\tOther step\t2026-01-01T00:00:00.0000000Z boom\nhelm-check\tRun helm unittest\t2026-01-01T00:00:00.0000000Z x\n' > "$FIX/log-900.txt"
+printf 'helm-check\tSecond job step\t2026-01-01T00:00:00.0000000Z assertion error\n' > "$FIX/log-900-job-1.txt"
+again; grep -q 'failed step: Second job step' <<<"$out" && grep -q 'gh run view 900 -R o/r --job 1 --log-failed' "$LOG"; check "fix-check: log is read for the failing check's job (--job)" $?
+rm -f "$FIX/log-900-job-1.txt"
+# one read per run/job within an invocation
+reset; prs '[{"number":1,"bot":true,"auto":true},{"number":2,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; reviews 2 'Verdict: ship it'; checks 1 60 fail; checks 2 60 fail; faillog 'assertion error'
+again; [ "$(grep -c 'gh run view 900' "$LOG")" = 1 ]; check "fix-check: a run/job is read once per invocation" $?
+# infra decision remembered across invocations
+reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 60 fail; faillog 'Could not resolve host: github.com'
+again; again; [ "$(grep -c 'gh run view 900' "$LOG")" = 1 ] && jq -e '.infra["o/r#1@abcdef1234567:helm-check:1"]' "$ST" >/dev/null; check "fix-check: infra decision remembered, log downloaded once over two invocations" $?
+prs '[{"number":1,"bot":true,"auto":true,"sha":"fedcba9876543"}]'; again; [ "$(grep -c 'gh run view 900' "$LOG")" = 2 ]; check "fix-check: a new head commit reads the log again" $?
+# infra on job 1, then the re-run (same run, same head, job 3) fails for a real reason: fix-check is sent
+reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 60 fail 900 1; faillog 'Could not resolve host: github.com'
+run; ! grep -q fix-check <<<"$out"
+checks 1 60 fail 900 3; faillog 'assertion error: expected 3 got 2'; rm -f "$FIX/log-900-job-3.txt"
+run; grep -q fix-check <<<"$out"; check "fix-check: a re-run failing for a real reason on a new job id is not hidden by the earlier infra decision" $?
 
 reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 5 fail; faillog 'assertion error: expected 3 got 2'
 run; [ -z "$out" ]; check "fix-check: failed less than the threshold ago -> nothing" $?
