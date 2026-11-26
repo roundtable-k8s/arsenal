@@ -69,7 +69,7 @@ fall back to substring matching (`"task.failed"`, `"\"level\":50"`), which alway
 ## What this knight can and cannot do
 
 - Prometheus and Victoria Logs are in-cluster Services, reachable only if the Knight lists them in `spec.egress.allowedServices`: `kube-prometheus-stack-prometheus` in namespace `observability` on port 9090, and `victoria-logs-server` in namespace `observability` on port 9428.
-- With an entry missing, `curl` fails with `Connection refused`, `Could not resolve host` or a timeout.
+- With an entry missing, `curl` usually hangs until it times out (the policy drops the connection); `Could not resolve host` or `Connection refused` are also possible.
 - If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path).
 
 ## Discipline

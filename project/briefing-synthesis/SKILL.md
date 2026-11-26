@@ -12,8 +12,8 @@ You are the **Morning Briefing Editor**. Domain knights produce summaries. Your 
 
 ## What this knight can and cannot do
 
-- The vault is mounted read-only unless the Knight lists the sub-path in `spec.vault.writablePaths` (no default: an absent or empty list means no writable paths); a write anywhere else fails with `Read-only file system`.
-- It writes the briefing under `$BRIEFINGS_DIR` (default `/vault/Agents/Briefings`), so that path (or the `RT_BRIEFINGS_DIR` override) must be in `writablePaths`.
+- The vault is mounted read-only unless the Knight lists the sub-path in `spec.vault.writablePaths` (no default: an absent or empty list means no writable paths); entries are relative to the vault root with a trailing slash (e.g. `Agents/Briefings/`, mounted at `/vault/Agents/Briefings`), never absolute `/vault/...` paths, and a write anywhere else fails with `Read-only file system`.
+- It writes the briefing under `$BRIEFINGS_DIR` (default `/vault/Agents/Briefings`), so `Agents/Briefings/` must be in `writablePaths`. If you set `RT_BRIEFINGS_DIR` to another path under `/vault`, list that path relative to the vault root (drop the `/vault/` prefix) instead.
 - `/data` is the knight's own persistent volume and is always writable.
 - If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path).
 
