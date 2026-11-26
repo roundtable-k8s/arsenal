@@ -30,9 +30,11 @@ if [ "$(jq -r .state <<<"$j")" != OPEN ] || ! jq -e --arg ip "$ip" '[.labels[].n
   echo "rt-handback: ok left-alone $repo#$issue"; exit 0
 fi
 
-body="PR pipeline run failed:"$'\n\n'"$(cat "$summary_file")"$'\n\n'"Add \`rt:ready\` again to re-run it."
+marker="<!-- rt-postrun:rt-handback -->"
+body="$marker"$'\n'"PR pipeline run failed:"$'\n\n'"$(cat "$summary_file")"$'\n\n'"Add \`rt:ready\` again to re-run it."
 gh issue edit "$issue" --repo "$repo" --add-label "$nh" >/dev/null
-if ! jq -e --arg b "$body" '[.comments[].body] | index($b)' <<<"$j" >/dev/null; then
+if ! jq -e --arg m "$marker" --arg b "$body" '[.comments[].body] | ($b | split("\n")) as $l
+    | any(.[]; startswith($m) and (split("\n") as $e | all($l[]; . as $x | any($e[]; . == $x))))' <<<"$j" >/dev/null; then
   gh issue comment "$issue" --repo "$repo" --body "$body" >/dev/null
 fi
 gh issue edit "$issue" --repo "$repo" --remove-label "$ip" >/dev/null

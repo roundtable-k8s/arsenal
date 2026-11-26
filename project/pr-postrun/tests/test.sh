@@ -10,10 +10,15 @@ export FIX="$work/fix" LOG="$work/log"
 
 # gh stub: reads fixtures from $FIX, logs every mutating call to $LOG.
 # pr view <url>  -> $FIX/pr-<num>.json      issue view <n> -> $FIX/issue-<n>.json[.<call#>]
-# $FIX/fail-<sub> (e.g. fail-merge) makes that subcommand exit 1.
+# $FIX/fail-<sub> (e.g. fail-issue-view) makes that subcommand exit 1.
 # pr merge prints $FIX/merge-out (if present) to its output, and exits 1 if fail-pr-merge exists.
+# api repos/<r>/issues/<n>/timeline prints $FIX/timeline-<n>.json (if present); not logged.
 cat > "$work/bin/gh" <<'STUB'
 #!/usr/bin/env bash
+if [ "$1" = "api" ]; then
+  [ -e "$FIX/fail-api" ] && exit 1
+  n="$(sed -E 's#.*/issues/([0-9]+)/timeline.*#\1#' <<<"$2")"; cat "$FIX/timeline-$n.json" 2>/dev/null; exit 0
+fi
 sub="$1 $2"; shift 2
 if [ "$sub" = "pr merge" ]; then
   echo "pr merge $*" >> "$LOG"
@@ -158,11 +163,46 @@ run "${V[@]}" ship_it "$work/review.md" $U/1 $U/2
 
 # idempotent re-run: comment already present is not posted twice
 reset; pr 1 CLOSED false "" false
-body="PR verification found problems:"$'\n'"- $U/1: closed without merging"
+body="<!-- rt-postrun:rt-verify -->"$'\n'"PR verification found problems:"$'\n'"- $U/1: closed without merging"
 issue 7 rt:in-progress OPEN "" "$(jq -nc --arg b "$body" '[{body:$b}]')"
 run "${V[@]}" ship_it "$work/review.md" $U/1
 [ $rc -eq 1 ] && ! logged "issue comment"; check "verify: re-run posts no duplicate comment" $?
 logged "--remove-label rt:in-progress"; check "verify: re-run still removes in-progress" $?
+
+# URLs survive redaction, tokens do not
+reset; issue 7 rt:in-progress; pr 1 OPEN false "" false '[{"body":"Verdict: ship it"}]'; touch "$FIX/fail-pr-merge"
+tok="gh""p_$(printf 'Q%.0s' $(seq 1 36))"
+printf '%s\n' "could not merge: see https://github.com/roundtable-k8s/roundtable/pull/123/checks $tok" > "$FIX/merge-out"
+run "${V[@]}" ship_it "$work/review.md" $U/1
+[[ "$(last)" == *"could not merge: see https://github.com/roundtable-k8s/roundtable/pull/123/checks [redacted])"* ]] && ! grep -q "$tok" <<<"$out"; check "verify: URL kept, ghp_ token redacted" $?
+logged "https://github.com/roundtable-k8s/roundtable/pull/123/checks"; check "verify: URL is in the posted comment" $?
+reset; issue 7 rt:in-progress; pr 1 OPEN false "" false '[{"body":"Verdict: ship it"}]'; touch "$FIX/fail-pr-merge"
+long="$(printf 'a%.0s' $(seq 1 40))"
+printf '%s\n' "bad $long done" > "$FIX/merge-out"
+run "${V[@]}" ship_it "$work/review.md" $U/1
+[[ "$(last)" == *"bad [redacted] done)"* ]]; check "verify: long non-URL token is redacted" $?
+
+# same problem set posts once across two runs; changed set posts a new, different comment
+reset; pr 1 CLOSED false "" false; issue 7 rt:in-progress
+run "${V[@]}" ship_it "$work/review.md" $U/1
+posted="$(grep -c '^issue comment' "$LOG")"
+body="$(sed -n 's/^issue comment 7 --repo o\/r --body //p' "$LOG")"
+[ "$posted" -eq 1 ] && [[ "$body" == "<!-- rt-postrun:rt-verify -->"* ]]; check "verify: first run posts a marker comment" $?
+: > "$LOG"; issue 7 rt:in-progress OPEN "" "$(jq -nc --arg b "<!-- rt-postrun:rt-verify -->"$'\n'"PR verification found problems:"$'\n'"- $U/1: closed without merging" '[{body:$b}]')"
+run "${V[@]}" ship_it "$work/review.md" $U/1
+! logged "issue comment"; check "verify: second run with same problems posts nothing" $?
+pr 2 CLOSED false "" false
+run "${V[@]}" ship_it "$work/review.md" $U/1 $U/2
+[ "$(grep -c '^issue comment' "$LOG")" -eq 1 ] && logged "$U/2: closed without merging"; check "verify: changed problem set posts one new comment" $?
+issue 7 rt:in-progress OPEN "" "$(jq -nc --arg b "<!-- rt-postrun:rt-verify -->"$'\n'"PR verification found problems:"$'\n'"- $U/1: closed without merging"$'\n'"- $U/2: closed without merging" '[{body:$b}]')"
+: > "$LOG"; run "${V[@]}" ship_it "$work/review.md" $U/1
+! logged "issue comment"; check "verify: problems already covered by a marker comment are not re-posted" $?
+
+# failed comment read posts nothing, result line unchanged
+reset; pr 1 CLOSED false "" false; touch "$FIX/fail-issue-view"
+run "${V[@]}" ship_it "$work/review.md" $U/1
+[ $rc -eq 1 ] && [[ "$(last)" == "rt-verify: needs-human $U/1: closed without merging" ]] && ! logged "issue comment" && grep -q "could not read comments" <<<"$out"; check "verify: failed comment read posts nothing, same result line" $?
+logged "--remove-label rt:in-progress"; check "verify: failed comment read still removes in-progress" $?
 
 # custom labels
 reset; issue 7 wip; pr 1 CLOSED false "" false
@@ -182,7 +222,7 @@ run "${H[@]}" "$work/summary.md"
 reset; issue 9 "needs-human"
 run "${H[@]}" "$work/summary.md"
 [[ "$(last)" == "rt-handback: ok left-alone o/r#9" ]] && [ ! -s "$LOG" ]; check "handback: not in progress is left alone" $?
-reset; body="PR pipeline run failed:"$'\n\n'"it broke"$'\n\n'"Add \`rt:ready\` again to re-run it."
+reset; body="<!-- rt-postrun:rt-handback -->"$'\n'"PR pipeline run failed:"$'\n\n'"it broke"$'\n\n'"Add \`rt:ready\` again to re-run it."
 issue 9 "rt:in-progress,needs-human" OPEN "" "$(jq -nc --arg b "$body" '[{body:$b}]')"
 run "${H[@]}" "$work/summary.md"
 [ $rc -eq 0 ] && ! logged "issue comment" && logged "--remove-label rt:in-progress"; check "handback: re-run posts no duplicate comment" $?
@@ -224,9 +264,31 @@ issue 11 "" CLOSED completed
 run "${C[@]}" 11
 [[ "$(last)" == "rt-close-parent: ok closed 5" ]] && [ "$(cat "$FIX/count-11")" -ge 3 ]; check "close-parent: polls until sub-issue closes" $?
 
-reset; issue 5 rt:in-progress OPEN "" "$(jq -nc '[{body:"All sub-issues (#11) closed as completed; closing this parent."}]')"; issue 11 "" CLOSED completed
+reset; issue 5 rt:in-progress OPEN "" "$(jq -nc '[{body:"<!-- rt-postrun:rt-close-parent -->\nAll sub-issues (#11) closed as completed; closing this parent."}]')"; issue 11 "" CLOSED completed
 run "${C[@]}" 11
 [[ "$(last)" == "rt-close-parent: ok closed 5" ]] && ! logged "issue comment"; check "close-parent: re-run posts no duplicate comment" $?
+
+reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed; issue 12 "" CLOSED completed
+jq -nc '[{event:"cross-referenced",source:{issue:{number:30,repository:{full_name:"o/r"},pull_request:{merged_at:"2026-01-01T00:00:00Z"}}}},
+         {event:"cross-referenced",source:{issue:{number:31,repository:{full_name:"o/r"},pull_request:{merged_at:null}}}},
+         {event:"labeled"}]' > "$FIX/timeline-11.json"
+jq -nc '[{event:"cross-referenced",source:{issue:{number:30,repository:{full_name:"o/r"},pull_request:{merged_at:"2026-01-01T00:00:00Z"}}}},
+         {event:"cross-referenced",source:{issue:{number:32,repository:{full_name:"o/x"},pull_request:{merged_at:"2026-01-02T00:00:00Z"}}}},
+         {event:"cross-referenced",source:{issue:{number:33,repository:{full_name:"o/r"}}}}]' > "$FIX/timeline-12.json"
+run "${C[@]}" 11 12
+[ $rc -eq 0 ] && logged "Merged PRs: o/r#30, o/x#32" && ! logged "o/r#31" && ! logged "o/r#33"; check "close-parent: lists merged PRs from the timelines" $?
+reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed; touch "$FIX/fail-api"
+run "${C[@]}" 11
+[ $rc -eq 0 ] && [[ "$(last)" == "rt-close-parent: ok closed 5" ]] && logged "All sub-issues" && ! logged "Merged PRs"; check "close-parent: failed timeline lookup omits the line" $?
+reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed; touch "$FIX/fail-api"
+run "${C[@]}" 11
+logged "<!-- rt-postrun:rt-close-parent -->"; check "close-parent: comment starts with marker" $?
+reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed
+# comment read fails on the parent's second view only: nothing posted
+reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed
+printf 'not json' > "$FIX/issue-5.json.3"
+run "${C[@]}" 11
+[ $rc -eq 0 ] && [[ "$(last)" == "rt-close-parent: ok closed 5" ]] && ! logged "issue comment" && grep -q "could not read comments" <<<"$out"; check "close-parent: failed comment read posts nothing, same result line" $?
 
 reset; issue 5 wip; issue 11 "" CLOSED completed
 run "${C[@]}" --in-progress-label wip 11

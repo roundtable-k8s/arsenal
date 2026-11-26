@@ -33,12 +33,17 @@ want="ship it"; [ "$verdict" = needs_changes ] && want="needs changes"
 
 problems=(); ok=()
 add_problem() { problems+=("$1"); }
-# First non-blank line of a failed command's output, token-like strings removed,
-# ';' replaced (problems are joined with ';'), trimmed to 200 characters.
+# First non-blank line of a failed command's output, token-like strings removed
+# (words containing "://" are URLs and are kept), ';' replaced (problems are joined
+# with ';'), trimmed to 200 characters.
 merge_reason() {
   local r
   r="$(printf '%s\n' "$1" | sed -n '/[^[:space:]]/{p;q}' \
-       | sed -E 's/(gh[pousr]_|github_pat_)[A-Za-z0-9_]+/[redacted]/g; s/[A-Za-z0-9_+\/=-]{32,}/[redacted]/g; s/;/,/g; s/^[[:space:]]+//; s/[[:space:]]+$//' \
+       | sed -E 's/(gh[pousr]_|github_pat_)[A-Za-z0-9_]+/[redacted]/g' \
+       | tr -s '[:space:]' '\n' \
+       | sed -E '/:\/\//!s/[A-Za-z0-9_+\/=-]{32,}/[redacted]/g' \
+       | paste -sd' ' - \
+       | sed -E 's/;/,/g; s/^[[:space:]]+//; s/[[:space:]]+$//' \
        | cut -c1-200)"
   printf '%s' "${r:-no reason given}"
 }
@@ -88,12 +93,19 @@ if [ ${#problems[@]} -eq 0 ]; then
   exit 0
 fi
 
-body="PR verification found problems:"
+marker="<!-- rt-postrun:rt-verify -->"
+body="$marker"$'\n'"PR verification found problems:"
 for p in "${problems[@]}"; do body+=$'\n'"- $p"; done
-existing="$(gh issue view "$issue" --repo "$repo" --json comments | jq -c '[.comments[].body]' || echo '[]')"
 gh issue edit "$issue" --repo "$repo" --add-label "$nh" >/dev/null
-if ! jq -e --arg b "$body" 'index($b)' <<<"$existing" >/dev/null; then
-  gh issue comment "$issue" --repo "$repo" --body "$body" >/dev/null
+# Post unless a marker comment already carries every problem line. When the
+# comments cannot be read, post nothing (a duplicate is worse than a missing comment).
+if existing="$(gh issue view "$issue" --repo "$repo" --json comments | jq -c '[.comments[].body]')"; then
+  if ! jq -e --arg m "$marker" --arg b "$body" '($b | split("\n")) as $l
+      | any(.[]; startswith($m) and (split("\n") as $e | all($l[]; . as $x | any($e[]; . == $x))))' <<<"$existing" >/dev/null; then
+    gh issue comment "$issue" --repo "$repo" --body "$body" >/dev/null
+  fi
+else
+  echo "rt-verify: warning: could not read comments on $repo#$issue; not commenting" >&2
 fi
 gh issue edit "$issue" --repo "$repo" --remove-label "$ip" >/dev/null
 summary="$(IFS=';'; echo "${problems[*]}")"
