@@ -144,7 +144,8 @@ Also send an alert for anything else that is blocked on the owner: a needs-human
 issue you cannot clear, a PR stuck for over an hour that no script or dispatch
 can move, a pod or knight down that you are not allowed to fix. `alert` prints
 one line and sends nothing when `NTFY_URL`/`NTFY_TOPIC` are not set; that is
-not an error.
+not an error. When `alert` exits 1, the line it printed names the cause; log it
+under `left for the owner:` and go on, without retrying in the same check.
 
 ### 6. Log
 
