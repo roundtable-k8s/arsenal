@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Check that a scheduled job produced its expected output files.
+#   verify-output <path>... [--min-bytes N] [--newer-than-minutes M]
+# Every path must be a regular file of at least N bytes (default 1) and, when
+# --newer-than-minutes is given, modified within the last M minutes.
+# Success: last stdout line "verify-output: ok <n> file(s)", exit 0.
+# Failure: each problem on stderr, and as the last stdout line
+#   "Outcome: failed output missing or empty: <first problem>", exit 1.
+# Exit 2 on bad arguments.
+set -euo pipefail
+
+usage() {
+  echo "usage: verify-output <path>... [--min-bytes N] [--newer-than-minutes M]" >&2
+  exit 2
+}
+
+min=1
+maxage=""
+paths=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --min-bytes)          [ $# -ge 2 ] || usage; min="$2"; shift 2 ;;
+    --newer-than-minutes) [ $# -ge 2 ] || usage; maxage="$2"; shift 2 ;;
+    --*) usage ;;
+    *) paths+=("$1"); shift ;;
+  esac
+done
+[ ${#paths[@]} -gt 0 ] || usage
+if ! [[ "$min" =~ ^[0-9]+$ ]]; then usage; fi
+if [ -n "$maxage" ] && ! [[ "$maxage" =~ ^[0-9]+$ ]]; then usage; fi
+
+now="$(date +%s)"
+problems=()
+for p in "${paths[@]}"; do
+  if [ ! -f "$p" ]; then
+    problems+=("missing $p")
+    continue
+  fi
+  size="$(stat -L -c %s "$p")"
+  if [ "$size" -lt "$min" ]; then
+    if [ "$size" -eq 0 ]; then
+      problems+=("empty $p")
+    else
+      problems+=("too small $p ($size < $min bytes)")
+    fi
+    continue
+  fi
+  if [ -n "$maxage" ]; then
+    mtime="$(stat -L -c %Y "$p")"
+    age=$(( (now - mtime) / 60 ))
+    if [ "$age" -gt "$maxage" ]; then
+      problems+=("stale $p (modified $age min ago)")
+    fi
+  fi
+done
+
+if [ ${#problems[@]} -gt 0 ]; then
+  for prob in "${problems[@]}"; do
+    echo "verify-output: $prob" >&2
+  done
+  echo "Outcome: failed output missing or empty: ${problems[0]}"
+  exit 1
+fi
+echo "verify-output: ok ${#paths[@]} file(s)"
