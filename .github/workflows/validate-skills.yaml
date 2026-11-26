@@ -1,5 +1,8 @@
 name: Validate Skills
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -104,16 +107,19 @@ jobs:
         run: |
           echo "Checking script files..."
           errors=0
-          for tier in shared project watch coding; do
-            while IFS= read -r script; do
-              if [[ ! -x "$script" ]]; then
-                echo "  ✗ Not executable: $script"
-                errors=$((errors + 1))
-              else
-                echo "  ✓ $script"
-              fi
-            done < <(find "$tier" -name "*.sh" -o -name "*.py" 2>/dev/null | sort)
-          done
+          while IFS= read -r script; do
+            # Shell/Python files by extension, and every extension-less file in a scripts/ dir with a shebang.
+            case "$script" in
+              *.sh|*.py) ;;
+              *) [[ "$(head -c2 "$script")" == "#!" ]] || continue ;;
+            esac
+            if [[ ! -x "$script" ]]; then
+              echo "  ✗ Not executable: $script"
+              errors=$((errors + 1))
+            else
+              echo "  ✓ $script"
+            fi
+          done < <(find shared project watch coding \( -name "*.sh" -o -name "*.py" -o -path "*/scripts/*" \) -type f 2>/dev/null | sort)
 
           if [[ $errors -gt 0 ]]; then
             echo ""
@@ -124,11 +130,55 @@ jobs:
           echo ""
           echo "All scripts are executable! ✓"
 
+      - name: Check test tools
+        run: |
+          # The vault-indexer test skips itself without these, so fail here instead of passing silently.
+          for tool in jq sqlite3 yq python3 curl; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool is not on the runner"; exit 1; }
+            echo "  ✓ $tool"
+          done
+
+      - name: Run script tests
+        run: |
+          fail=0
+          for t in project/*/tests/*.sh shared/*/tests/*.sh tests/*.sh; do
+            [ -e "$t" ] || continue
+            echo "::group::$t"
+            if bash "$t"; then
+              echo "  ✓ $t"
+            else
+              echo "  ✗ FAILED: $t"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          if [[ $fail -ne 0 ]]; then
+            echo "One or more script tests failed."
+            exit 1
+          fi
+          echo "All script tests passed! ✓"
+
+      - name: shellcheck
+        run: |
+          fail=0
+          while IFS= read -r script; do
+            first=$(head -n1 "$script")
+            # Only bash/sh scripts (not Python, not JSON).
+            [[ "$first" =~ ^#!.*(bash|sh)([[:space:]]|$) ]] || continue
+            if shellcheck -S warning "$script"; then
+              echo "  ✓ $script"
+            else
+              echo "  ✗ shellcheck: $script"
+              fail=1
+            fi
+          done < <(find shared project watch coding -path "*/scripts/*" -type f | sort)
+          exit $fail
+
       - name: Validate skill directory structure
         run: |
           echo "Checking agentskills.io compliance..."
           errors=0
-          for skill_md in $(find shared security intel comms -name "SKILL.md" 2>/dev/null | sort); do
+          for skill_md in $(find shared project watch coding -name "SKILL.md" 2>/dev/null | sort); do
             skill_dir=$(dirname "$skill_md")
             # Check for unexpected files at skill root (only SKILL.md + known dirs)
             for item in "$skill_dir"/*; do
