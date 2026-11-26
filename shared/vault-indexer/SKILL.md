@@ -2,6 +2,9 @@
 name: vault-indexer
 description: >
   SQLite-based Obsidian vault indexer for fast structured queries. Use for searching notes by tag, date, path, or keyword instead of slow grep-based searching.
+compatibility: >
+  Needs sqlite3, yq (mikefarah v4), python3 and bash 4+ on PATH. The knight base image
+  ships none of sqlite3/yq, so add them via spec.tools.nix. Does not use jq.
 ---
 
 # vault-indexer
@@ -220,11 +223,15 @@ MODIFIED             PATH                              SIZE    TITLE
 2026-03-08 06:00:00  Briefings/Daily/2026-03-08.md    28KB    DAILY BRIEFING — March 8, 2026
 ```
 
+## Errors
+
+Bad `--sort` (created, modified, size, path), `--order` (ASC/DESC), `--limit`/`--days` (non-negative integer), a missing database, or a failing sqlite query print `Error: ...` to stderr and exit 1. "No results found" (exit 0) means the query succeeded and matched nothing. Tests: `bash shared/vault-indexer/tests/test.sh` (skips without sqlite3/yq).
+
 ## Installation
 
 ### Prerequisites
 - `yq` (YAML processor) — `mise use github:mikefarah/yq`
-- `sqlite3` — typically system package
+- `sqlite3` — not in the knight base image; add via `spec.tools.nix` (e.g. `sqlite`, `yq-go`)
 - `python3` — for frontmatter parsing
 - `bash` 4.0+
 
@@ -369,7 +376,7 @@ rm /data/vault-index.db
 
 ### "yq: command not found"
 ```bash
-# Install yq via mise
+# On a knight, add yq-go (and sqlite) to spec.tools.nix; elsewhere:
 mise use github:mikefarah/yq
 mise install
 ```

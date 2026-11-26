@@ -93,12 +93,26 @@ EOF
     esac
 done
 
+# Double single quotes so a value can sit inside a SQL string literal
+sql_escape() {
+    printf '%s' "${1//\'/\'\'}"
+}
+
+# Fail with an Error: line and exit 1
+die() {
+    echo -e "${RED}Error: $*${NC}" >&2
+    exit 1
+}
+
 # Check database exists
 if [[ ! -f "$DB_PATH" ]]; then
     echo -e "${RED}Error: Database not found: $DB_PATH${NC}" >&2
     echo "Run index-vault.sh first to build the index" >&2
     exit 1
 fi
+
+# Validate inputs
+[[ "$LIMIT" =~ ^[0-9]+$ ]] || die "--limit must be a non-negative integer"
 
 # Build SQL query
 build_query() {
@@ -110,26 +124,29 @@ build_query() {
     if [[ ${#TAGS[@]} -gt 0 ]]; then
         for i in "${!TAGS[@]}"; do
             joins="$joins LEFT JOIN tags t$i ON n.id = t$i.note_id"
-            where_clauses+=("t$i.tag = '${TAGS[$i]}'")
+            where_clauses+=("t$i.tag = '$(sql_escape "${TAGS[$i]}")'")
         done
     fi
     
     # Path filters
     for path in "${PATHS[@]}"; do
-        where_clauses+=("n.path LIKE '%$path%'")
+        where_clauses+=("n.path LIKE '%$(sql_escape "$path")%'")
     done
     
     # Since filter
     if [[ -n "$SINCE" ]]; then
-        where_clauses+=("n.modified >= '$SINCE'")
+        where_clauses+=("n.modified >= '$(sql_escape "$SINCE")'")
     fi
     
     # Combine query parts
     query="$query$joins"
     
     if [[ ${#where_clauses[@]} -gt 0 ]]; then
-        local where_str
-        where_str=$(IFS=" AND "; echo "${where_clauses[*]}")
+        # IFS only joins on a single character, so build the " AND " chain by hand
+        local where_str="${where_clauses[0]}" clause
+        for clause in "${where_clauses[@]:1}"; do
+            where_str="$where_str AND $clause"
+        done
         query="$query WHERE $where_str"
     fi
     
@@ -240,7 +257,15 @@ execute_query() {
     query=$(build_query)
     
     local results
-    results=$(sqlite3 -separator '|' "$DB_PATH" "$query" 2>/dev/null || echo "")
+    local errfile rc=0
+    errfile=$(mktemp)
+    results=$(sqlite3 -separator '|' "$DB_PATH" "$query" 2>"$errfile") || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        echo -e "${RED}Error: query failed: $(cat "$errfile")${NC}" >&2
+        rm -f "$errfile"
+        exit 1
+    fi
+    rm -f "$errfile"
     
     if [[ -z "$results" ]]; then
         echo -e "${YELLOW}No results found${NC}" >&2

@@ -339,7 +339,7 @@ index_vault() {
     # Find all .md files and index them
     while IFS= read -r filepath; do
         index_file "$filepath"
-        ((file_count++))
+        file_count=$((file_count + 1))
         
         if [[ $VERBOSE -eq 1 ]] && [[ $((file_count % 100)) -eq 0 ]]; then
             log_info "Processed $file_count files..."
