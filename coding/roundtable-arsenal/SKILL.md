@@ -23,7 +23,7 @@ shared/      Cross-cutting skills (daily-reports, web-search, evidence-verificat
 project/     Round Table project work (briefing-synthesis, chain-orchestration, fleet-status, github-pm)
 watch/       Night Watch (night-watch-triage, telemetry-queries)
 coding/      Working on the Round Table itself (roundtable-operator, roundtable-ui,
-             pi-knight-runtime, roundtable-arsenal, night-watch-fix) + coding-agent.md
+             pi-knight-runtime [= the knights monorepo], roundtable-arsenal, night-watch-fix) + coding-agent.md
 operator/    Prompts used by the operator (planner.md)
 ```
 

@@ -17,7 +17,7 @@ Read your repo's codebase skill first: `coding/roundtable-operator`,
 
 | Repo | Verify before push |
 |---|---|
-| roundtable-k8s/pi-knight | `npm ci && npx tsc --noEmit && npm test && npm run build` |
+| roundtable-k8s/knights | from the repo root: `npm ci && npm run build && npm run typecheck && npm test && npm run lint` (one package: `npm test --workspace packages/pi-knight`) |
 | roundtable-k8s/roundtable-ui | `cd api && go build ./... && go vet ./... && go test ./...`; UI changes: `cd ui && npm install && npm run build` |
 | roundtable-k8s/roundtable | `go build ./... && go vet ./...`; run `make test` (envtest) — if the sandbox can't, say so in the PR body |
 | roundtable-k8s/arsenal | skills are markdown: valid YAML frontmatter (`name`, `description`), check referenced paths/commands actually exist |

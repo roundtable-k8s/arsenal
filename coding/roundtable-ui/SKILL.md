@@ -5,12 +5,14 @@ description: Work within the roundtable-ui dashboard repo (React + Go API). Use 
 
 # roundtable-ui Codebase Guide
 
+_Last checked against roundtable-k8s/roundtable-ui @ `f423069`. Layout is by directory and pattern; run `ls api ui/src/*` for the current files._
+
 ## Quick Reference
 
 | Aspect | Detail |
 |--------|--------|
 | Frontend | React 18, Vite, TypeScript, Tailwind CSS |
-| Backend | Go 1.23, gorilla/mux + gorilla/websocket |
+| Backend | Go (see `api/go.mod`), gorilla/mux + gorilla/websocket |
 | Tests | Vitest + Testing Library (UI), Go test (API) |
 | Storybook | v8.6 for component development |
 | CI | npm build + go vet + Docker multi-stage build |
@@ -19,44 +21,25 @@ description: Work within the roundtable-ui dashboard repo (React + Go API). Use 
 ## Project Layout
 
 ```
-api/
-  main.go             Go API server (REST + WebSocket proxy)
-  main_test.go        API tests
-  go.mod / go.sum     Go dependencies
+api/                  Go API (package main, flat): `main.go` wires routes; one file per
+                      endpoint group (cards, chat, chains, dead_letters, schedules,
+                      triggers, telemetry, isolation, gateway_dispatch, ...), each with a
+                      `_test.go`; `testdata/` holds JSON fixtures; go.mod / go.sum
 ui/
   src/
-    App.tsx           Root component + routing
-    main.tsx          Entry point
-    index.css         Tailwind base styles
-    components/
-      FleetGraph.tsx          Fleet topology visualization (@xyflow/react)
-      KnightCard.tsx          Knight status card
-      KnightDetailDrawer.tsx  Knight detail panel
-      MessageParticle.tsx     Animated NATS message particles
-      MissionCard.tsx         Mission display
-      MissionPhaseBadge.tsx   Mission phase indicator
-      RoundTableGraph.tsx     Round table visualization
-      Toast.tsx               Notification toasts
-    hooks/
-      useFleet.ts             Fleet data fetching
-      useKnightSession.ts     Knight session management
-      useWebSocket.ts         NATS WebSocket connection
-      useMissions.ts          Mission data
-      useTaskNotifications.ts Task notification handler
-    pages/
-      Dashboard.tsx           Main dashboard
-      Fleet.tsx               Fleet overview
-      Architecture.tsx        Architecture diagram
-      Briefings.tsx           Morning briefings
-      Chains.tsx              Chain visualization
-      CostDashboard.tsx       Cost tracking
-    lib/
-      auth.ts                 Authentication
-      knights.ts              Knight data utilities
-  .storybook/                 Storybook config
-  package.json
-  tsconfig.json
-Dockerfile                    Multi-stage: node→go→alpine
+    App.tsx, main.tsx  Root component + routing, entry point
+    pages/             One file per route (Dashboard, Fleet, Chains, Schedules, Triggers,
+                       FailedTasks, Chat, Missions, Queues, Sessions, ...)
+    components/        Reusable views/badges/graphs (@xyflow/react); `ui/index.tsx` holds
+                       shared primitives; `.stories.tsx` and `.test.tsx` sit beside them
+    hooks/             Data fetching (useCards, useTables, useRunning, usePolledFetch,
+                       useTaskActivity, useWebSocket, ...)
+    lib/               Pure logic and API client (api.ts, types.ts, formatters, parsers),
+                       unit-tested beside the code
+    test/              Vitest setup + fixtures
+  .storybook/          Storybook config
+  vite.config.ts       Builds to ../api/static
+Dockerfile             Multi-stage: node→go→alpine
 ```
 
 ## Build & Test
@@ -113,6 +96,7 @@ All visual components should have `.stories.tsx` files. Tests use `@testing-libr
 
 ## Conventions
 
+- Go API pattern: add a new endpoint group as its own file plus `_test.go`, register it in `main.go`
 - **Always run `npx tsc --noEmit`** before committing — catches type errors Vite ignores
 - Components in `components/`, page-level views in `pages/`, data fetching in `hooks/`
 - Tailwind for all styling (no CSS modules)
