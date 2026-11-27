@@ -3,5 +3,6 @@
 tests
 Dockerfile.arsenal
 .dockerignore
+# Root-only on purpose: `**/*.md` would drop every SKILL.md from the image.
 *.md
 LICENSE
