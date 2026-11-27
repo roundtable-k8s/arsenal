@@ -6,6 +6,7 @@
 #   "check-brief: incomplete".
 set -euo pipefail
 
+here="$(cd "$(dirname "$0")" && pwd)"
 HEADINGS=("Goal" "Context" "Inputs" "Constraints" "Output wanted" "Done when")
 LIMIT=32768 # bytes; a brief must be strictly under 32 KiB
 
@@ -28,18 +29,42 @@ if [ "$size" -ge "$LIMIT" ]; then
   fail=1
 fi
 
+TPL="$here/../assets/brief-template.md"
+
 # One "name<TAB>nonblank" line per "## " heading: nonblank is 1 when the body has text.
 # CRLF line endings are stripped first. A "## " line inside a ``` or ~~~ fence is body
-# text, not a heading. A line that is only an italic guidance line (_..._) outside a
-# fence is blank: it is the unfilled template's placeholder.
-sections="$(awk '
+# text, not a heading. A fence closes only on a line of the same marker character with at
+# least as many characters as the opener. A line that is exactly one of the template's
+# italic guidance lines (_..._ outside a fence) is blank: it is the unfilled placeholder.
+# If the template is missing, any _..._ line outside a fence is blank.
+sections="$(awk -v tpl="$TPL" '
+  BEGIN {
+    have_tpl = 0
+    while ((getline line < tpl) > 0) {
+      have_tpl = 1
+      sub(/\r$/, "", line); sub(/[ \t]+$/, "", line)
+      if (line ~ /^_.*_$/) guide[line] = 1
+    }
+    close(tpl)
+  }
   { sub(/\r$/, "") }
   !fence && /^## / {
     if (name != "") print name "\t" nb
     name = substr($0, 4); sub(/[ \t]+$/, "", name); nb = 0; next
   }
-  /^(```|~~~)/ { fence = !fence }
-  name != "" && /[^[:space:]]/ && (fence || !/^_.*_[[:space:]]*$/) { nb = 1 }
+  {
+    if (fence) {
+      t = $0; sub(/[ \t]+$/, "", t)
+      if ((t ~ /^`+$/ || t ~ /^~+$/) && substr(t, 1, 1) == fchar && length(t) >= flen) fence = 0
+    } else if ($0 ~ /^(```|~~~)/) {
+      fence = 1; match($0, /^[`~]+/); fchar = substr($0, 1, 1); flen = RLENGTH
+    }
+  }
+  name != "" && /[^[:space:]]/ {
+    t = $0; sub(/[ \t]+$/, "", t)
+    guidance = (t ~ /^_.*_$/) && (!have_tpl || (t in guide))
+    if (fence || !guidance) nb = 1
+  }
   END { if (name != "") print name "\t" nb }
 ' "$src")"
 

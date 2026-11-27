@@ -97,26 +97,40 @@ for h in "${HEADINGS[@]}"; do
 done
 st=0; grep -q "missing heading" "$work/err" && st=1; report "raw template: no heading reported missing" "$st"
 
-# A body that is only a guidance line (outside a fence) is blank; a guidance-looking line in a fence is text.
-{ complete | sed 's/^Text for Goal\.$/_Only guidance here._/'; } > "$work/guide.md"
+# Append CR to every line (portable: BSD sed does not expand \r or \n in replacements).
+crlf() { awk '{ printf "%s\r\n", $0 }'; }
+
+# A body that is exactly a template guidance line (outside a fence) is blank; a guidance-looking line in a fence is text.
+tpl_guide="_One sentence: the outcome you need, stated so that it can be checked._"
+complete | awk -v g="$tpl_guide" '/^Text for Goal\.$/ {print g; next} {print}' > "$work/guide.md"
 run "$C" "$work/guide.md"
-expect "guidance-only body is empty" 1 "empty body: Goal"
-{ complete | sed 's/^Text for Goal\.$/```\n_code_\n```/'; } > "$work/fenceguide.md"
+expect "template guidance line as body is empty" 1 "empty body: Goal"
+complete | awk '/^Text for Goal\.$/ {print "```"; print "_code_"; print "```"; next} {print}' > "$work/fenceguide.md"
 run "$C" "$work/fenceguide.md"
 expect "guidance-looking line inside a fence counts as text" 0 ""
 
+# An underscore-wrapped answer that is not a template guidance line is real text.
+complete | awk '/^Text for Goal\.$/ {print "_see attached_"; next} {print}' > "$work/underscore.md"
+run "$C" "$work/underscore.md"
+expect "real underscore-wrapped answer counts as filled" 0 ""
+
+# Without the template, any underscore-wrapped line outside a fence is blank (old rule).
+mkdir -p "$work/notpl/scripts"; cp "$C" "$work/notpl/scripts/check-brief"
+run "$work/notpl/scripts/check-brief" "$work/guide.md"
+expect "missing template: underscore-wrapped body is empty" 1 "empty body: Goal"
+
 # ---- CRLF line endings ----
-complete | sed 's/$/\r/' > "$work/crlf.md"
+complete | crlf > "$work/crlf.md"
 run "$C" "$work/crlf.md"
 expect "CRLF copy of a valid brief exits 0" 0 ""
 st=0; [ "$(last)" = "check-brief: ok" ] || st=1; report "CRLF brief: last line is check-brief: ok" "$st"
 
-sed 's/$/\r/' "$T" > "$work/crlf-tpl.md"
+crlf < "$T" > "$work/crlf-tpl.md"
 run "$C" "$work/crlf-tpl.md"
 expect "CRLF raw template exits 1 with empty body" 1 "empty body: Done when"
 
 # A CRLF body with only blank lines is still empty (a lone \r is not text).
-complete | sed 's/^Text for Context\.$//' | sed 's/$/\r/' > "$work/crlf-empty.md"
+complete | awk '/^Text for Context\.$/ {print ""; next} {print}' | crlf > "$work/crlf-empty.md"
 run "$C" "$work/crlf-empty.md"
 expect "CRLF blank body is empty" 1 "empty body: Context"
 
@@ -135,6 +149,22 @@ expect "## inside a backtick fence does not create the Done when heading" 1 "mis
 } > "$work/tilde.md"
 run "$C" "$work/tilde.md"
 expect "## inside a tilde fence is not a heading; fence body counts as text" 0 ""
+
+# A ``` fence is closed only by ```, so a ~~~ line does not end it and the ## after it is not a heading.
+{
+  printf '## Goal\n```\ntext\n~~~\n## Done when\nnot a heading\n```\n\n'
+  printf '## Context\nText.\n\n## Inputs\nText.\n\n## Constraints\nText.\n\n## Output wanted\nText.\n'
+} > "$work/mismatch.md"
+run "$C" "$work/mismatch.md"
+expect "~~~ does not close a backtick fence: ## after it is not a heading" 1 "missing heading: Done when"
+
+# A longer fence is closed only by a marker at least as long: ``` does not close ````.
+{
+  printf '## Goal\n````\n```\n## Done when\n````\n\n'
+  printf '## Context\nText.\n\n## Inputs\nText.\n\n## Constraints\nText.\n\n## Output wanted\nText.\n'
+} > "$work/longfence.md"
+run "$C" "$work/longfence.md"
+expect "a 3-backtick line does not close a 4-backtick fence: ## inside it is not a heading" 1 "missing heading: Done when"
 
 echo "$((n-fails))/$n passed"
 [ "$fails" -eq 0 ]
