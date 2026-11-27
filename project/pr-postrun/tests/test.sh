@@ -280,9 +280,20 @@ run "${C[@]}" 11 12
 reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed; touch "$FIX/fail-api"
 run "${C[@]}" 11
 [ $rc -eq 0 ] && [[ "$(last)" == "rt-close-parent: ok closed 5" ]] && logged "All sub-issues" && ! logged "Merged PRs"; check "close-parent: failed timeline lookup omits the line" $?
-reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed; touch "$FIX/fail-api"
+reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed
 run "${C[@]}" 11
-logged "<!-- rt-postrun:rt-close-parent -->"; check "close-parent: comment starts with marker" $?
+[ "$(sed -n 's/^issue comment 5 --repo o\/r --body //p' "$LOG" | head -n 1)" = "<!-- rt-postrun:rt-close-parent -->" ]; check "close-parent: comment starts with marker" $?
+# a repo name with a double quote must not break the jq program
+reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed
+jq -nc '[{event:"cross-referenced",source:{issue:{number:30,pull_request:{merged_at:"2026-01-01T00:00:00Z"}}}}]' > "$FIX/timeline-11.json"
+run "$scripts/rt-close-parent" 'o"x/r' 5 11
+[ $rc -eq 0 ] && logged 'Merged PRs: o"x/r#30'; check "close-parent: repo name with a double quote is passed to jq safely" $?
+# timeline lookup failed on the first run, the marker comment lacks the Merged PRs line; the re-run
+# finds the merged PR and must not post a second close comment
+reset; issue 5 rt:in-progress OPEN "" "$(jq -nc '[{body:"<!-- rt-postrun:rt-close-parent -->\nAll sub-issues (#11) closed as completed; closing this parent."}]')"; issue 11 "" CLOSED completed
+jq -nc '[{event:"cross-referenced",source:{issue:{number:30,repository:{full_name:"o/r"},pull_request:{merged_at:"2026-01-01T00:00:00Z"}}}}]' > "$FIX/timeline-11.json"
+run "${C[@]}" 11
+[[ "$(last)" == "rt-close-parent: ok closed 5" ]] && ! logged "issue comment" && logged "issue close 5"; check "close-parent: re-run with a new Merged PRs line posts no second comment" $?
 reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed
 # comment read fails on the parent's second view only: nothing posted
 reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed
