@@ -88,5 +88,53 @@ sed -E 's/^_.*_$/filled in/' "$T" > "$work/tpl.md"
 run "$C" "$work/tpl.md"
 expect "template passes once guidance lines are replaced" 0 ""
 
+# ---- raw unfilled template: every heading has only guidance lines, so every body is empty ----
+run "$C" "$T"
+expect "raw template exits 1" 1 ""
+for h in "${HEADINGS[@]}"; do
+  grep -qF -- "empty body: $h" "$work/err"; st=$?
+  report "raw template: '$h' reported as empty body" "$st"
+done
+st=0; grep -q "missing heading" "$work/err" && st=1; report "raw template: no heading reported missing" "$st"
+
+# A body that is only a guidance line (outside a fence) is blank; a guidance-looking line in a fence is text.
+{ complete | sed 's/^Text for Goal\.$/_Only guidance here._/'; } > "$work/guide.md"
+run "$C" "$work/guide.md"
+expect "guidance-only body is empty" 1 "empty body: Goal"
+{ complete | sed 's/^Text for Goal\.$/```\n_code_\n```/'; } > "$work/fenceguide.md"
+run "$C" "$work/fenceguide.md"
+expect "guidance-looking line inside a fence counts as text" 0 ""
+
+# ---- CRLF line endings ----
+complete | sed 's/$/\r/' > "$work/crlf.md"
+run "$C" "$work/crlf.md"
+expect "CRLF copy of a valid brief exits 0" 0 ""
+st=0; [ "$(last)" = "check-brief: ok" ] || st=1; report "CRLF brief: last line is check-brief: ok" "$st"
+
+sed 's/$/\r/' "$T" > "$work/crlf-tpl.md"
+run "$C" "$work/crlf-tpl.md"
+expect "CRLF raw template exits 1 with empty body" 1 "empty body: Done when"
+
+# A CRLF body with only blank lines is still empty (a lone \r is not text).
+complete | sed 's/^Text for Context\.$//' | sed 's/$/\r/' > "$work/crlf-empty.md"
+run "$C" "$work/crlf-empty.md"
+expect "CRLF blank body is empty" 1 "empty body: Context"
+
+# ---- "## " inside a fenced code block is not a heading ----
+{
+  printf '## Goal\nText for Goal.\n\n## Context\n```\n## Done when\nnot a heading\n```\n\n'
+  printf '## Inputs\nText.\n\n## Constraints\nText.\n\n## Output wanted\nText.\n\n'
+} > "$work/fence.md"
+run "$C" "$work/fence.md"
+expect "## inside a backtick fence does not create the Done when heading" 1 "missing heading: Done when"
+
+# Tilde fences work the same way, and fence text still counts as body text.
+{
+  printf '## Goal\n~~~\n## Done when\n~~~\n\n## Context\nText.\n\n## Inputs\nText.\n\n'
+  printf '## Constraints\nText.\n\n## Output wanted\nText.\n\n## Done when\nText.\n'
+} > "$work/tilde.md"
+run "$C" "$work/tilde.md"
+expect "## inside a tilde fence is not a heading; fence body counts as text" 0 ""
+
 echo "$((n-fails))/$n passed"
 [ "$fails" -eq 0 ]
