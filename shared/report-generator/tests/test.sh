@@ -72,6 +72,14 @@ check "strict fails on {{#if x}}" $([ $? -eq 1 ]; echo $?)
 python3 "$render" --template "$here/../../daily-reports/assets/vault-template.md" --data "$work/d.json" 2>&1 | grep -q '{{#if\|{{#unless'
 check "vault-template.md has no #if/#unless tags" $([ $? -ne 0 ]; echo $?)
 
+cat > "$work/daily.json" <<'J'
+{"knight":"sir-gareth","run_id":"daily-2026-02-15","report_type":"daily-briefing","timestamp":"2026-02-15T06:30:00Z","summary":"All green.","sections":[{"title":"Infra","priority":"low","content":"ok","data_sources":["NVD API","Uptime Kuma"],"sources":"NVD API, Uptime Kuma","confidence":"high"},{"title":"Space","priority":"medium","content":"G1","data_sources":["NOAA SWPC"],"sources":"NOAA SWPC","confidence":"high"}],"highlights":["a","b"],"follow_up_needed":false,"follow_up_questions":["q?"]}
+J
+vt="$here/../../daily-reports/assets/vault-template.md"
+out=$(python3 "$render" --template "$vt" --data "$work/daily.json" --strict 2>"$work/err"); rc=$?
+check "vault-template.md renders with --strict" $([ "$rc" -eq 0 ]; echo $?)
+check "vault-template.md output has no {{ and no trailing comma on sources" $([[ "$out" != *"{{"* && "$out" == *"*Sources: NVD API, Uptime Kuma*"* && "$out" != *", *"* ]]; echo $?)
+
 run '{{x}}' '[1,2]'
 check "array data exits 1" $([ "$rc" -eq 1 ]; echo $?)
 check "array data is one Error line without traceback" $([ "$err" = "Error: data in $work/d.json must be a JSON object, got list" ] && [ "$(echo "$err" | wc -l)" -eq 1 ]; echo $?)
