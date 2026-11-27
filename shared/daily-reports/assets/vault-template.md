@@ -1,12 +1,12 @@
 ---
-date: {{date}}
+date: {{timestamp}}
 type: daily-briefing
 knight: {{knight}}
 run_id: {{run_id}}
 follow_up: {{follow_up_needed}}
 ---
 
-# Daily Briefing — {{knight_display}}
+# Daily Briefing — {{knight}}
 *{{timestamp}}*
 
 ## Summary
@@ -25,7 +25,7 @@ follow_up: {{follow_up_needed}}
 
 {{this.content}}
 
-*Sources: {{#each this.data_sources}}{{this}}, {{/each}}*
+*Sources: {{this.sources}}*
 
 ---
 {{/each}}

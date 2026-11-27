@@ -83,6 +83,13 @@ Every daily report MUST be a JSON object matching this schema. See [`assets/cont
 | `content` | string | ✅ | Markdown-formatted content |
 | `data_sources` | array | ✅ | Sources consulted (APIs, sites, feeds) |
 | `confidence` | enum | ✅ | `high`, `medium`, or `low` |
+| `sources` | string | for rendering | `data_sources` joined with `", "` (e.g. `NOAA SWPC, NVD API`). Render-only: the template engine has no nested loops, so the vault template prints this string. Optional in the JSON contract, but `--strict` rendering fails without it. |
+
+Add `sources` to every section before rendering:
+
+```bash
+jq '.sections |= map(.sources = (.data_sources | join(", ")))' report.json > report.rendered.json
+```
 
 ### Resolutions (mandatory — see `shared/evidence-verification`)
 
@@ -107,7 +114,7 @@ any highlight-count guidance.
 
 ## Markdown Vault Template
 
-After generating the JSON, use [`assets/vault-template.md`](assets/vault-template.md) to render a markdown report for saving to the user's Obsidian vault. Use `shared/report-generator` to render it.
+After generating the JSON, use [`assets/vault-template.md`](assets/vault-template.md) to render a markdown report for saving to the user's Obsidian vault. Use `shared/report-generator` to render it (with `--strict`, after adding `sources` per section as above).
 
 ## Example: Security Knight Daily Report
 

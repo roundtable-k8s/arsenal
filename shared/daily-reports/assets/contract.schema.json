@@ -39,6 +39,7 @@
           "priority": { "type": "string", "enum": ["high", "medium", "low"] },
           "content": { "type": "string", "description": "Markdown-formatted content" },
           "data_sources": { "type": "array", "items": { "type": "string" } },
+          "sources": { "type": "string", "description": "data_sources joined with \", \" (render-only; needed by vault-template.md)" },
           "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
         }
       }
