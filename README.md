@@ -20,6 +20,7 @@ arsenal/
 │   ├── schedules/             # Inspect and operate schedules, with a health report
 │   ├── side-by-side/          # Compare an old job's dated output with the new one
 │   ├── vault-indexer/         # Vault indexing helpers
+│   ├── workspace-snapshots/   # Check and take workspace snapshots before risky work
 │   ├── web-browser/           # Headless browsing
 │   ├── web-search/            # SearXNG metasearch
 │   └── web-fetch/             # URL content extraction
