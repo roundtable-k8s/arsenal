@@ -51,6 +51,20 @@ c="$work/conc.json"
 wait
 jq -e 'type == "array"' "$c" >/dev/null; check "ledger: two concurrent appends leave valid JSON" $?
 
+# ---- ledger: ten parallel appends all land ----
+p="$work/par.json"
+for i in $(seq 1 10); do "$L" append "$p" "job-$i" done --date 2026-01-01 >/dev/null & done
+wait
+[ "$(nentries "$p")" = 10 ]; check "ledger: ten parallel appends produce ten entries" $?
+jq -e '[.[].job] | unique | length == 10' "$p" >/dev/null; check "ledger: parallel appends keep every job" $?
+
+# ---- ledger: existing file mode survives an append ----
+m="$work/mode.json"
+run "$L" append "$m" job done --date 2026-01-01
+chmod 0644 "$m"
+run "$L" append "$m" job done --date 2026-01-02; [ $rc -eq 0 ]; check "ledger: append to a 0644 ledger succeeds" $?
+[ "$(stat -c %a "$m")" = 644 ]; check "ledger: 0644 ledger is still 0644 after append" $?
+
 # ---- ledger: stray temp file from an interrupted write is ignored ----
 s="$work/stray.json"
 run "$L" append "$s" job done --date 2026-01-01
@@ -96,6 +110,10 @@ run "$V" "$work/out/empty.md"; [ $rc -eq 1 ]; check "verify-output: empty file e
 run "$V" "$work/out/a.md" "$work/out/stale.md" --newer-than-minutes 60; [ $rc -eq 1 ]; check "verify-output: stale file fails --newer-than-minutes" $?
 [[ "$(last)" == "Outcome: failed "* ]]; check "verify-output: stale file prints Outcome line last" $?
 run "$V" "$work/out/a.md" --newer-than-minutes 60; [ $rc -eq 0 ]; check "verify-output: fresh file passes --newer-than-minutes" $?
+run "$V" "$work/out/stale.md" --newer-than-minutes 60; [ $rc -eq 1 ]; check "verify-output: stale-only file exits 1" $?
+[[ "$(last)" == "Outcome: failed output not usable: stale "* ]]; check "verify-output: stale-only failure uses neutral wording" $?
+run "$V" "$work/out/empty.md" "$work/out/stale.md" --newer-than-minutes 60; [ $rc -eq 1 ]; check "verify-output: empty plus stale still fails" $?
+[[ "$(last)" == "Outcome: failed output missing or empty: empty "* ]]; check "verify-output: a non-stale problem keeps the spec wording" $?
 
 # ---- verify-output: bad arguments ----
 run "$V"; [ $rc -eq 2 ]; check "verify-output: no paths exits 2" $?
