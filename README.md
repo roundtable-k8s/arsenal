@@ -130,6 +130,21 @@ layout of the reference deployment):
 | `RT_REPORTS_DIR` | `/vault/Agents/Roundtable` | Knight reports |
 | `RT_NIGHTWATCH_DIR` | `/vault/Agents/NightWatch` | Night Watch ledger |
 
+## Use this arsenal as an OCI image
+
+Every push to `main` publishes the skills as an image to `ghcr.io/roundtable-k8s/arsenal`, tagged `sha-<commit>` and `main`. The digest is in the run summary of the "Publish Arsenal Image" workflow. Mount it by digest (the reference must be digest-pinned; needs Kubernetes image volumes):
+
+```yaml
+spec:
+  arsenals:
+    - name: platform
+      oci:
+        reference: ghcr.io/roundtable-k8s/arsenal@sha256:<digest>
+        pullPolicy: IfNotPresent
+```
+
+The image root is the arsenal root (`coding`, `operator`, `project`, `shared`, `watch`); it mounts at `/arsenal-oci/<name>`.
+
 ## License
 
 MIT

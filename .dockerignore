@@ -1,0 +1,7 @@
+.git
+.github
+tests
+Dockerfile.arsenal
+.dockerignore
+*.md
+LICENSE
