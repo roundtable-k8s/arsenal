@@ -24,7 +24,7 @@ cat > "$work/fixture.json" <<'JSON'
   {"taskId":"t-refused","knight":"lancelot","table":"main","state":"open","reason":"refused","error":"","attempt":1,"retryOf":null,"chainName":null,"stepName":null},
   {"taskId":"t-attempt3","knight":"galahad","table":"main","state":"open","reason":"lost","error":"","attempt":3,"retryOf":null,"chainName":null,"stepName":null},
   {"taskId":"t-retried","knight":"galahad","table":"main","state":"retried","reason":"lost","error":"","attempt":1,"retryOf":null,"chainName":null,"stepName":null},
-  {"taskId":"t-dismissed-chain","knight":"galahad","table":"main","state":"dismissed","reason":"timeout","error":"","attempt":1,"retryOf":null,"chainName":"nightwatch","stepName":"x"},
+  {"taskId":"t-resolved-chain","knight":"galahad","table":"main","state":"resolved","reason":"timeout","error":"","attempt":1,"retryOf":null,"chainName":"nightwatch","stepName":"x"},
   {"taskId":"t-no-attempt","knight":"galahad","table":"main","state":"open","reason":"lost","error":"","attempt":null,"retryOf":null,"chainName":null,"stepName":null},
   {"taskId":"t-unknown-reason","knight":"galahad","table":"main","state":"open","reason":"weird","error":"","attempt":1,"retryOf":null,"chainName":null,"stepName":null}
 ]
@@ -52,8 +52,8 @@ check "classify: rerun-chain why names the chain and step" $?
 [ "$(action_of t-unknown-reason)" = inspect ]; check "classify: unknown reason is inspect" $?
 
 # ---- non-open entries are never retry ----
-jq -e -s '[.[] | select(.taskId == "t-retried" or .taskId == "t-dismissed-chain") | .action] | length == 2 and all(.[]; . != "retry")' <<<"$out" >/dev/null
-check "classify: retried and dismissed entries are never retry" $?
+jq -e -s '[.[] | select(.taskId == "t-retried" or .taskId == "t-resolved-chain") | .action] | length == 2 and all(.[]; . != "retry")' <<<"$out" >/dev/null
+check "classify: retried and resolved entries are never retry" $?
 
 # ---- summary ----
 run "$C" --summary "$work/fixture.json"; [ $rc -eq 0 ]; check "classify: --summary exits 0" $?
@@ -74,10 +74,15 @@ run "$C" "$work/wrapped.json"; [ $rc -eq 0 ] && [ "$(action_of w)" = retry ]; ch
 # ---- bad input exits 2 ----
 printf '[{"taskId":' > "$work/malformed.json"
 run "$C" "$work/malformed.json"; [ $rc -eq 2 ]; check "classify: malformed JSON exits 2" $?
-printf '[{"knight":"k","state":"open","reason":"lost","attempt":1}]' > "$work/notask.json"
-run "$C" "$work/notask.json"; [ $rc -eq 2 ]; check "classify: entry without taskId exits 2" $?
-printf '[{"taskId":"x","knight":"k","reason":"lost","attempt":1}]' > "$work/nostate.json"
-run "$C" "$work/nostate.json"; [ $rc -eq 2 ]; check "classify: entry without state exits 2" $?
+printf '[{"taskId":"ok-1","knight":"k","state":"open","reason":"lost","attempt":1},{"knight":"k","state":"open","reason":"lost","attempt":1},{"taskId":"nostate","knight":"k","reason":"lost","attempt":1}]' > "$work/missing-fields.json"
+run "$C" "$work/missing-fields.json"; [ $rc -eq 0 ] && [ "$(wc -l <<<"$out")" = 3 ] && [ "$(action_of ok-1)" = retry ]
+check "classify: entries with missing fields do not fail the rest" $?
+jq -e 'select(.taskId == null) | .action == "inspect" and .why == "missing fields: taskId"' <<<"$out" >/dev/null
+check "classify: entry without taskId is inspect, naming the field" $?
+jq -e 'select(.taskId == "nostate") | .action == "inspect" and .why == "missing fields: state"' <<<"$out" >/dev/null
+check "classify: entry without state is inspect, naming the field" $?
+printf '[1]' > "$work/nonobj.json"
+run "$C" "$work/nonobj.json"; [ $rc -eq 2 ]; check "classify: non-object entry exits 2" $?
 printf '{"not":"a list"}' > "$work/object.json"
 run "$C" "$work/object.json"; [ $rc -eq 2 ]; check "classify: object without deadLetters exits 2" $?
 printf '"text"' > "$work/string.json"

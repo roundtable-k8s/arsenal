@@ -112,5 +112,13 @@ run "$S" --tasks "$work/t.json" --dead-letters "$work/wrongshape.json"; [ $rc -e
 run "$S" --tasks "$work/t.json" --dead-letters "$work/d.json" --knights "$work/bad.json"; [ $rc -eq 2 ]; check "malformed knights JSON exits 2" $?
 run "$S" --tasks "$work/t.json" --dead-letters "$work/d.json" --knights "$work/k.json" --tasks; [ $rc -eq 2 ]; check "--tasks without a value exits 2" $?
 
+# ---- offset timestamps ----
+# 10:00+01:00 is 09:00Z (kept by --since 09:00:00Z); 10:00-01:00 is 11:00Z.
+echo '{"tasks":[{"taskId":"o1","knight":"k","status":"completed","durationMs":1,"createdAt":"2026-11-26T09:59:59+01:00"},{"taskId":"o2","knight":"k","status":"completed","durationMs":1,"createdAt":"2026-11-26T10:00:00+01:00"},{"taskId":"o3","knight":"k","status":"completed","durationMs":1,"createdAt":"2026-11-26T08:30:00.5-01:00"}]}' > "$work/off.json"
+run "$S" --tasks "$work/off.json" --dead-letters "$work/empty-d.json" --since 2026-11-26T09:00:00Z
+[ "$rc" -eq 0 ] && grep -qx 'Tasks: 2' <<<"$out" && grep -q ' o2$' <<<"$out" && grep -q ' o3$' <<<"$out"; check "offset createdAt is normalised to UTC for --since" $?
+run "$S" --tasks "$work/off.json" --dead-letters "$work/empty-d.json" --since 2026-11-26T10:00:00+01:00
+[ "$rc" -eq 0 ] && grep -qx 'Tasks: 2' <<<"$out"; check "--since accepts a +HH:MM offset" $?
+
 echo "# $((n - fails))/$n passed"
 [ "$fails" -eq 0 ]

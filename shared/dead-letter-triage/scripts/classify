@@ -2,7 +2,8 @@
 # Classify open dead letters by the gateway's retry rules (docs/gateway.md, retry endpoint).
 #   classify [--summary] [<list.json>]        (reads stdin when no file is given)
 # Input: the list_dead_letters JSON, a bare array of entries or an object with a
-# "deadLetters" array. Each entry needs taskId, knight, state and reason.
+# "deadLetters" array. An entry missing taskId, knight, state or reason is
+# classified inspect ("missing fields: ...") instead of failing the input.
 # Output: one JSON line per entry {taskId, knight, action, why}, plus traceId and
 # chainName when the entry has them (non-empty). Action one of:
 #   retry        open, not chain-owned, reason lost|timeout|failed, attempt below 3
@@ -41,21 +42,23 @@ else
   json="$(cat)"
 fi
 
-# Accept a bare array or {"deadLetters": [...]}; every entry needs the four fields.
+# Accept a bare array or {"deadLetters": [...]}; entries must be objects.
 entries='def entries:
   if type == "array" then .
   elif type == "object" and (.deadLetters | type) == "array" then .deadLetters
   else error("expected an array of dead letters") end;'
 
 printf '%s' "$json" | jq -e "$entries"'
-  entries | all(.[]; type == "object" and has("taskId") and has("knight")
-                     and has("state") and has("reason"))' >/dev/null 2>&1 \
-  || bad_input "input is not a list of dead-letter entries with taskId, knight, state and reason"
+  entries | all(.[]; type == "object")' >/dev/null 2>&1 \
+  || bad_input "input is not a list of dead-letter entries"
 
 # The gateway rules, applied in order. Non-open entries are never retried.
 program="$entries"'
+def missing: . as $e | [("taskId","knight","state","reason") as $f | select($e | has($f) | not) | $f];
 def action:
-  if .state != "open" then
+  if (missing | length) > 0 then
+    {action: "inspect", why: ("missing fields: " + (missing | join(", ")))}
+  elif .state != "open" then
     {action: "inspect", why: ("state is " + (.state | tostring) + "; only open entries can be retried")}
   elif ((.chainName // "") != "") then
     {action: "rerun-chain", why: ("chain-owned by " + .chainName
@@ -77,7 +80,7 @@ def action:
     {action: "inspect", why: ("unknown reason " + (.reason | tostring))}
   end;
 entries | .[] | . as $e | ($e | action) as $c
-  | {taskId: $e.taskId, knight: $e.knight, action: $c.action, why: $c.why}
+  | {taskId: ($e.taskId // null), knight: ($e.knight // null), action: $c.action, why: $c.why}
     + (if ($e.traceId // "") != "" then {traceId: $e.traceId} else {} end)
     + (if ($e.chainName // "") != "" then {chainName: $e.chainName} else {} end)'
 

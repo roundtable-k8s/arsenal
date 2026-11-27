@@ -32,6 +32,12 @@ S=/skills/shared/fleet-summary/scripts
 bash $S/summarise --tasks $D/tasks.json --dead-letters $D/deadletters.json --knights $D/knights.json --since 2026-11-26T00:00:00Z
 ```
 
+If you skipped step 4, drop `--knights $D/knights.json`:
+
+```bash
+bash $S/summarise --tasks $D/tasks.json --dead-letters $D/deadletters.json --since 2026-11-26T00:00:00Z
+```
+
 6. Add a conclusion in your own words under the script output: what went well, what failed, and what needs a person. Do not copy the output unchanged.
 
 ## Options
