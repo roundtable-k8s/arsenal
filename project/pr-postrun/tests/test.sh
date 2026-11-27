@@ -294,7 +294,6 @@ reset; issue 5 rt:in-progress OPEN "" "$(jq -nc '[{body:"<!-- rt-postrun:rt-clos
 jq -nc '[{event:"cross-referenced",source:{issue:{number:30,repository:{full_name:"o/r"},pull_request:{merged_at:"2026-01-01T00:00:00Z"}}}}]' > "$FIX/timeline-11.json"
 run "${C[@]}" 11
 [[ "$(last)" == "rt-close-parent: ok closed 5" ]] && ! logged "issue comment" && logged "issue close 5"; check "close-parent: re-run with a new Merged PRs line posts no second comment" $?
-reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed
 # comment read fails on the parent's second view only: nothing posted
 reset; issue 5 rt:in-progress; issue 11 "" CLOSED completed
 printf 'not json' > "$FIX/issue-5.json.3"
