@@ -17,6 +17,7 @@ All three: bash, `gh` and `jq`, token from `GH_TOKEN`. Options
 (default `needs-human`). Bad arguments exit 2 with a usage line. The **last
 output line** is the result; the chain checks it for `<script>: ok`. Re-running
 after a partial failure is safe: no duplicate comments, in-progress removed last.
+A comment posted before the marker existed (before #79) has no marker, so the first re-run after #79 posts it once more; later re-runs post nothing.
 
 ```bash
 S=/skills/project/pr-postrun/scripts

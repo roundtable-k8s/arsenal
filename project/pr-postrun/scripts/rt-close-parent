@@ -74,7 +74,8 @@ marker="<!-- rt-postrun:rt-close-parent -->"
 comment_once() {
   local body="$marker"$'\n'"$1" existing
   if existing="$(gh issue view "$parent" --repo "$repo" --json comments | jq -c '[.comments[].body]')"; then
-    if ! jq -e --arg m "$marker" --arg b "$body" '($b | split("\n")) as $l
+    # The "Merged PRs:" line is ignored, so a re-run whose timeline lookup now succeeds does not repost.
+    if ! jq -e --arg m "$marker" --arg b "$body" '($b | split("\n") | map(select(startswith("Merged PRs: ") | not))) as $l
         | any(.[]; startswith($m) and (split("\n") as $e | all($l[]; . as $x | any($e[]; . == $x))))' <<<"$existing" >/dev/null; then
       gh issue comment "$parent" --repo "$repo" --body "$body" >/dev/null
     fi
@@ -86,8 +87,8 @@ comment_once() {
 # Merged PRs that reference sub-issue $1, one "<repo>#<n>" per line. Best effort.
 merged_prs() {
   gh api "repos/$repo/issues/$1/timeline" --paginate 2>/dev/null \
-    | jq -r '.[]? | select(.event == "cross-referenced") | .source.issue
-             | select(.pull_request.merged_at != null) | "\(.repository.full_name // "'"$repo"'")#\(.number)"' 2>/dev/null || true
+    | jq -r --arg repo "$repo" '.[]? | select(.event == "cross-referenced") | .source.issue
+             | select(.pull_request.merged_at != null) | "\(.repository.full_name // $repo)#\(.number)"' 2>/dev/null || true
 }
 
 if [ ${#problems[@]} -eq 0 ]; then
