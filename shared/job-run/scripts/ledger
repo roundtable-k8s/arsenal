@@ -73,7 +73,8 @@ append() {
     exit 1
   fi
   # mktemp creates 0600; keep the existing ledger's mode so other readers keep access.
-  if [ -e "$file" ]; then chmod --reference="$file" "$tmp"; fi
+  # A new ledger gets 0666 minus the umask (0644 with the usual 022).
+  if [ -e "$file" ]; then chmod --reference="$file" "$tmp"; else chmod "$(printf '%03o' $((0666 & ~$(umask))))" "$tmp"; fi
   mv -f "$tmp" "$file"
   echo "ledger: ok $file $job $status $date"
 }

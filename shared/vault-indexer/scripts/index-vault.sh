@@ -338,6 +338,8 @@ if isinstance(tags, str):
     tags = [tags]
 if isinstance(tags, list):
     for tag in tags:
+        if not str(tag).strip():
+            continue
         tag_clean = str(tag).replace(\"'\", \"''\")
         print(f\"INSERT OR IGNORE INTO tags (note_id, tag) VALUES ($note_id, '{tag_clean}');\")
 " | sqlite3 "$DB_PATH"; then
