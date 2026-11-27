@@ -52,6 +52,10 @@ S=/skills/shared/job-run/scripts
 - `last <ledger.json> [job]` prints the newest entry (optionally for one job) as JSON.
   Exit 1 when there is no matching entry.
 - A ledger that is not a JSON array is never overwritten: exit 1, file untouched.
+- `append` also creates a `<ledger>.lock` file next to the ledger to serialise
+  concurrent appends. It is left in place on purpose and is safe to ignore or
+  delete between runs; do not delete it while a
+  job may be running.
 - Writes go through a temp file and `mv`, so an interrupted run cannot leave a
   half-written ledger.
 

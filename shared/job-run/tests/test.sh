@@ -65,6 +65,14 @@ chmod 0644 "$m"
 run "$L" append "$m" job done --date 2026-01-02; [ $rc -eq 0 ]; check "ledger: append to a 0644 ledger succeeds" $?
 [ "$(stat -c %a "$m")" = 644 ]; check "ledger: 0644 ledger is still 0644 after append" $?
 
+# ---- ledger: a new ledger gets 0666 minus the umask ----
+for um in 022 077; do
+  nf="$work/new-$um.json"
+  ( umask $um; "$L" append "$nf" job done --date 2026-01-01 >/dev/null 2>&1 )
+  want=$([ "$um" = 022 ] && echo 644 || echo 600)
+  [ "$(stat -c %a "$nf")" = "$want" ]; check "ledger: new ledger is $want under umask $um" $?
+done
+
 # ---- ledger: stray temp file from an interrupted write is ignored ----
 s="$work/stray.json"
 run "$L" append "$s" job done --date 2026-01-01

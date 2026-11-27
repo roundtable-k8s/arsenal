@@ -64,6 +64,17 @@ created: 2026-03-23
 ---
 # Scalar
 N
+# empty and whitespace-only tags must not be indexed
+cat > "$vault/Notes/empty-tag.md" <<'N'
+---
+title: Empty tag note
+type: note
+tags: ["", "  ", real-tag]
+created: 2026-03-24
+---
+# Empty
+N
+printf '%s\n' '---' 'title: Empty scalar' 'type: note' 'tags: ""' 'created: 2026-03-25' '---' '# Empty scalar' > "$vault/Notes/empty-scalar.md"
 # a body after the frontmatter, including a line that is not valid YAML
 cat > "$vault/Notes/body-note.md" <<'N'
 ---
@@ -216,5 +227,10 @@ for fmt in table json csv; do
 done
 out=$(bash "$scripts/recent-notes.sh" --db "$tmp/notags.db" --format json 2>&1); rc=$?
 check "recent json: failed tag lookup exits 1 with Error:" $([[ $rc -eq 1 && "$out" == *"Error:"* ]]; echo $?)
+
+out=$(sqlite3 "$db" "SELECT count(*) FROM tags WHERE trim(tag) = '';" 2>&1)
+check "no empty or whitespace-only tag is indexed" $([[ "$out" == 0 ]]; echo $?)
+out=$(q --tag real-tag --format paths 2>&1)
+check "real tag next to empty tags is still indexed" $([[ "$out" == *empty-tag.md* ]]; echo $?)
 
 echo "$n tests, $fails failed"; [ "$fails" -eq 0 ]
