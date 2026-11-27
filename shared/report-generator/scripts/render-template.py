@@ -16,10 +16,12 @@ import sys
 from pathlib import Path
 
 # {{#each key}}...{{/each}} | {{name}} or {{a.b}} | stray block tag (unmatched/nested)
+# | any other {{...}} tag outside the grammar ({{#if}}, {{ x }}, ...), reported as unresolved
 _TOKEN = re.compile(
     r"\{\{#each\s+([\w.]+)\}\}(.*?)\{\{/each\}\}"
     r"|\{\{([\w.]+)\}\}"
-    r"|(\{\{#each\s+[\w.]+\}\}|\{\{/each\}\})",
+    r"|(\{\{#each\s+[\w.]+\}\}|\{\{/each\}\})"
+    r"|(\{\{[^}]*\}\})",
     re.DOTALL,
 )
 _MISSING = object()
@@ -73,8 +75,9 @@ def _render(template, data, item, has_item, unresolved):
                 unresolved.append(m.group(0))
                 return m.group(0)
             return value
-        unresolved.append(m.group(4))
-        return m.group(4)
+        tag = m.group(4) if m.group(4) is not None else m.group(5)
+        unresolved.append(tag)
+        return tag
 
     return _TOKEN.sub(sub, template)
 

@@ -44,8 +44,12 @@ is_date() {
 }
 
 [[ $days =~ ^[1-9][0-9]*$ ]] || die "--days must be a positive integer"
-[ -d "$old" ] && [ -r "$old" ] || die "cannot read old dir: $old"
-[ -d "$new" ] && [ -r "$new" ] || die "cannot read new dir: $new"
+if [ ! -d "$old" ] || [ ! -r "$old" ] || [ ! -x "$old" ]; then
+    die "cannot read old dir: $old"
+fi
+if [ ! -d "$new" ] || [ ! -r "$new" ] || [ ! -x "$new" ]; then
+    die "cannot read new dir: $new"
+fi
 if [ -z "$today" ]; then
     today=$(date +%F)
 fi

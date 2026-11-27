@@ -62,6 +62,16 @@ printf '%s' '{{nope}}' > "$work/t.md"
 python3 "$render" --template "$work/t.md" --data "$work/d.json" --output "$work/o.md" --strict >/dev/null 2>&1
 check "strict does not create the output file" $([ ! -e "$work/o.md" ]; echo $?)
 
+run '{{#if x}}y{{/if}}' '{"x":1}'
+check "unsupported #if tag is reported" $([[ "$err" == *"unresolved placeholder {{#if x}}"* && "$err" == *"unresolved placeholder {{/if}}"* ]]; echo $?)
+run '{{ x }}' '{"x":1}'
+check "tag with spaces is reported" $([[ "$err" == *"unresolved placeholder {{ x }}"* ]]; echo $?)
+printf '%s' '{{#if x}}y{{/if}}' > "$work/t.md"; printf '{"x":1}' > "$work/d.json"
+python3 "$render" --template "$work/t.md" --data "$work/d.json" --strict >/dev/null 2>&1
+check "strict fails on {{#if x}}" $([ $? -eq 1 ]; echo $?)
+python3 "$render" --template "$here/../../daily-reports/assets/vault-template.md" --data "$work/d.json" 2>&1 | grep -q '{{#if\|{{#unless'
+check "vault-template.md has no #if/#unless tags" $([ $? -ne 0 ]; echo $?)
+
 run '{{x}}' '[1,2]'
 check "array data exits 1" $([ "$rc" -eq 1 ]; echo $?)
 check "array data is one Error line without traceback" $([ "$err" = "Error: data in $work/d.json must be a JSON object, got list" ] && [ "$(echo "$err" | wc -l)" -eq 1 ]; echo $?)
