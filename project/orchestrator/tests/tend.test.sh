@@ -33,7 +33,8 @@ case "$1" in
     if [ "$2" = graphql ]; then   # built from the reviews-/comments- fixtures of the open PRs
       [ -e "$FIX/fail-graphql" ] && { echo "boom" >&2; exit 1; }
       o=""; nm=""; for a in "$@"; do case "$a" in owner=*) o="${a#owner=}" ;; name=*) nm="${a#name=}" ;; esac; done
-      pf="$FIX/prs-${o}_${nm}.json"; [ -e "$pf" ] || pf=/dev/null
+      pf="$FIX/gql-prs-${o}_${nm}.json"; [ -e "$pf" ] || pf="$FIX/prs-${o}_${nm}.json"
+      [ -e "$pf" ] || pf=/dev/null   # gql-prs-O_N.json: head commits GraphQL reports, if they differ from the listing
       nodes='[]'
       for n in $(jq -r '.[].number' "$pf" 2>/dev/null); do
         rf="$FIX/reviews-${o}_${nm}-$n.json"; cf="$FIX/comments-${o}_${nm}-$n.json"
@@ -223,7 +224,7 @@ jq '.breakingRebaseMinutes = 60' "$work/off.json" > "$work/off-m.json"
 out="$("$tend" --config "$work/off-m.json" --state "$ST" 2>&1)"; [ -z "$out" ]; check "breaking: breakingRebaseMinutes from config" $?
 reset; prs "[{\"number\":2,\"bot\":true,\"mss\":\"DIRTY\",\"labels\":\"breaking\",\"upd\":\"$(ago '40 minutes')\"}]"
 out="$("$tend" --config "$cfg" --state "$ST" 2>&1)"; [ "$(lines)" = 1 ] && grep -q "blocks the repository" <<<"$out"; check "breaking: dispatch mode behaves as before, plus the plain sentence" $?
-for bad in '.breakingLabel = ""' '.breakingLabel = 3' '.breakingRebaseMinutes = "x"' '.breakingRebaseMinutes = -1' '.breakingRetryHours = null' '.breakingRetryHours = "3"'; do
+for bad in '.breakingLabel = ""' '.breakingLabel = 3' '.breakingRebaseMinutes = "x"' '.breakingRebaseMinutes = -1' '.breakingRetryHours = null' '.breakingRetryHours = "3"' '.breakingRetryHours = 0'; do
   jq "$bad" "$cfg" > "$work/badb.json"
   out="$("$tend" --config "$work/badb.json" --state "$ST" 2>&1)"; rc=$?
   f="$(sed -E 's/^\.(\w+).*/\1/' <<<"$bad")"
@@ -389,7 +390,7 @@ again; again; [ "$(grep -c 'gh run view 900' "$LOG")" = 1 ] && jq -e '.infra["o/
 prs '[{"number":1,"bot":true,"auto":true,"sha":"fedcba9876543"}]'; again; [ "$(grep -c 'gh run view 900' "$LOG")" = 2 ]; check "fix-check: a new head commit reads the log again" $?
 # infra on job 1, then the re-run (same run, same head, job 3) fails for a real reason: fix-check is sent
 reset; prs '[{"number":1,"bot":true,"auto":true}]'; reviews 1 'Verdict: ship it'; checks 1 60 fail 900 1; faillog 'Could not resolve host: github.com'
-run; ! grep -q fix-check <<<"$out"
+run; ! grep -q fix-check <<<"$out"; check "fix-check: infra on the first job -> no fix-check" $?
 checks 1 60 fail 900 3; faillog 'assertion error: expected 3 got 2'; rm -f "$FIX/log-900-job-3.txt"
 run; grep -q fix-check <<<"$out"; check "fix-check: a re-run failing for a real reason on a new job id is not hidden by the earlier infra decision" $?
 
@@ -421,7 +422,12 @@ reset; manyprs; checks 1 60 fail; faillog 'assertion error: expected 3 got 2'
 again; [ $rc -eq 0 ] && [ "$(vreqs)" = 1 ] && logged "api graphql" && ! logged "pulls/" && ! logged "/comments"; check "verdicts: 8 PRs in two sections cost one graphql request, no REST" $?
 [ "$(lines)" = 3 ] && grep -q 'queued o/r#1 ' <<<"$out" && grep -q 'queued o/r#3 ' <<<"$out" && grep -q '"kind":"fix-check"' <<<"$out" && grep -q 'pull/1 is approved' <<<"$out"; check "verdicts: queue and fix-check results unchanged" $?
 reset; manyprs; touch "$FIX/fail-graphql"; checks 1 60 fail; faillog 'assertion error: expected 3 got 2'
-again; [ "$(lines)" = 3 ] && [ "$(grep -c 'pulls/1/reviews' "$LOG")" = 1 ] && [ "$(grep -c 'pulls/3/reviews' "$LOG")" = 1 ]; check "verdicts: graphql failure falls back to REST, still once per PR" $?
+again; [ "$(grep -c 'could not read verdicts of o/r via GraphQL' <<<"$out")" = 1 ] && [ "$(lines)" = 4 ] && [ "$(grep -c 'pulls/1/reviews' "$LOG")" = 1 ] && [ "$(grep -c 'pulls/3/reviews' "$LOG")" = 1 ] && grep -q 'queued o/r#1 ' <<<"$out"; check "verdicts: graphql failure warns once per repo, REST still queues, once per PR" $?
+reset; manyprs; touch "$FIX/fail-graphql"
+again; [ "$(grep -c 'could not read verdicts' <<<"$out")" = 1 ] && [ "$(grep -c 'queued o/r#3 ' <<<"$out")" = 1 ]; check "verdicts: failing graphql is one warning, not one per PR" $?
+reset; prs '[{"number":1,"bot":true}]'; reviews 1 'Verdict: ship it'
+jq '.[0].headRefOid = "1111111222222"' "$FIX/prs-o_r.json" > "$FIX/gql-prs-o_r.json"
+out="$("$tend" --config "$cfg" --state "$ST" 2>&1)"; [ "$out" = "tend: queued o/r#1 (ship it, head abcdef1)" ] && logged "pulls/1/reviews"; check "verdicts: head moved since listing -> REST read of the listed head, queued" $?
 reset; manyprs; touch "$FIX/gql-trunc-1"
 again; [ "$(lines)" = 2 ] && [ "$(grep -c 'pulls/1/reviews' "$LOG")" = 1 ] && ! logged "pulls/3/reviews"; check "verdicts: a PR with more than 100 reviews is read by REST" $?
 reset; manyprs
