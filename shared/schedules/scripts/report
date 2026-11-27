@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Turn a list_schedules reply (and optionally a list_schedule_runs reply) into one
+# short health report: counts of active, suspended and Git-managed schedules, the
+# schedules whose last result is failed, lost or skipped, the active schedules with
+# no next run, and the last five runs.
+#
+# Usage:
+#   report --schedules FILE [--runs FILE]
+#
+# Inputs: list_schedules -> {"schedules":[...]}, list_schedule_runs -> {"runs":[...]}.
+# Reads files only; jq is the only tool needed.
+# Exit: 0 report printed; 2 bad arguments, unreadable file or bad JSON.
+set -euo pipefail
+export LC_ALL=C
+
+die() { echo "report: $*" >&2; exit 2; }
+usage() { echo "usage: report --schedules FILE [--runs FILE]" >&2; }
+
+schedules=""; runs=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --schedules) [ $# -ge 2 ] || { usage; die "--schedules needs a value"; }; schedules=$2; shift 2 ;;
+        --runs)      [ $# -ge 2 ] || { usage; die "--runs needs a value"; }; runs=$2; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) usage; die "unknown option or argument: $1" ;;
+    esac
+done
+[ -n "$schedules" ] || { usage; die "--schedules is required"; }
+
+# check_file <path> <array-key>: readable, JSON object whose key is an array
+check_file() {
+    [ -r "$1" ] || die "cannot read $1"
+    jq -e --arg k "$2" 'type == "object" and (.[$k] | type == "array")' "$1" >/dev/null 2>&1 \
+        || die "$1: not JSON with a \"$2\" array"
+}
+check_file "$schedules" schedules
+[ -z "$runs" ] || check_file "$runs" runs
+
+jq -r '
+  .schedules as $s
+  | ($s | map(select(.suspended != true))) as $active
+  | "Schedules: \($s | length)",
+    "  active: \($active | length)  suspended: \($s | length - ($active | length))  git-managed: \($s | map(select(.managedBy == "git")) | length)",
+    ( [$s[] | select((.lastResult.outcome // "") | IN("failed", "lost", "skipped"))] as $bad
+      | if ($bad | length) == 0 then "No schedules with a failed, lost or skipped last result"
+        else "Last result failed, lost or skipped: \($bad | length)",
+             ($bad[] | "  \(.name)  \(.lastResult.outcome)  \(.lastResult.time // "-")"
+                + (if (.lastResult.skipReason // "") != "" then "  (\(.lastResult.skipReason))" else "" end)) end ),
+    ( [$active[] | select((.nextRunAt // "") == "")] as $none
+      | if ($none | length) == 0 then "No active schedules without a next run"
+        else "Active but no next run: \($none | length)",
+             ($none[] | "  \(.name)  cron \(.cron // "-")") end )
+' "$schedules"
+
+if [ -n "$runs" ]; then
+    jq -r '
+      .runs | sort_by(.time // "") | reverse | .[0:5] as $r
+      | if ($r | length) == 0 then "No runs"
+        else "Last \($r | length) runs:",
+             ($r[] | "  \(.time // "-")  \(.outcome // "unknown")  "
+                + (if .durationSeconds == null then "-" else "\(.durationSeconds | round)s" end)
+                + "  "
+                + (if (.costUSD // "") == "" then "-" else "$\(.costUSD)" end)
+                + "  \(.run // "-")") end
+    ' "$runs"
+fi
