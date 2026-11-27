@@ -45,7 +45,7 @@ npm run lint
 npm test --workspace packages/pi-knight   # one package
 ```
 
-Run typecheck, test and lint before pushing.
+Build and typecheck before the first push; run the narrowest test while iterating, and the full test and lint suite once, before marking the PR ready.
 
 ## Finish inside the turn
 

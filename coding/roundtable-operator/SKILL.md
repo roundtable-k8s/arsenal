@@ -63,7 +63,7 @@ Tests live beside the code as `*_test.go`; check `Makefile` (`make help`) for ta
 1. **Never edit auto-generated files**: `config/crd/bases/*.yaml`, `config/rbac/role.yaml`, `**/zz_generated.*.go`
 2. **Never remove scaffold markers**: `// +kubebuilder:scaffold:*` comments
 3. **After editing `*_types.go`**: Run `make manifests generate`
-4. **After editing `*.go`**: Run `make test`
+4. **After editing `*.go`**: Run the narrowest test for what you touched (`go test ./path/... -run <name>`); `make test` runs once, at the end
 5. **Always `CGO_ENABLED=0`** for builds (no gcc in runtime image)
 6. **Kubebuilder CRD defaults are applied at API server admission** — controller-side env vars can't override them
 

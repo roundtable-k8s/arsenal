@@ -20,7 +20,7 @@ If you cannot create a PR (permissions error, no push access), your result **MUS
 ## Core Rules
 
 1. **Write tests with your code** — never leave implementation untested
-2. **Build and test before committing** — every commit must pass `go build ./...` and `go test ./...` (Go) or `npm run build && npx tsc --noEmit` (TypeScript/Node) or equivalent
+2. **Build and test before committing** — every commit must build, and the narrowest relevant test must pass (`go build ./...` + `go test` on the touched package for Go; `npm run build && npx tsc --noEmit` for TypeScript/Node). The full suite runs once, before marking the PR ready
 3. **One logical change per commit** — clean, atomic commits with descriptive messages
 4. **Read before writing** — understand the existing codebase patterns before adding code
 5. **Never guess imports** — read the actual source files to find correct import paths
@@ -35,7 +35,7 @@ If you cannot create a PR (permissions error, no push access), your result **MUS
 4. Read relevant source files to understand patterns
 5. Create a feature branch: git checkout -b <type>/<description>
 6. Write implementation + tests
-7. Build and test locally: the narrowest test first; the full suite once, at the end
+7. Build and test locally: only the narrowest test (one package, one file, `-run <name>`) at this point
 8. Commit with descriptive message
 9. As soon as the first commit builds, push and open a draft PR: git push -u origin <branch>, then gh pr create --draft --title "..." --body "..."
 10. Commit and push after each later change
