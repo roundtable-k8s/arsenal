@@ -5,7 +5,7 @@ description: Work within the roundtable-ui dashboard repo (React + Go API). Use 
 
 # roundtable-ui Codebase Guide
 
-_Last checked against roundtable-k8s/roundtable-ui @ `73de9be`. Layout is by directory and pattern; run `ls api ui/src/*` for the current files._
+_Last checked against roundtable-k8s/roundtable-ui @ `72c7ead`. Layout is by directory and pattern; run `ls api ui/src/*` for the current files._
 
 ## Quick Reference
 
@@ -60,6 +60,8 @@ go vet ./...
 go test ./...
 ```
 
+`ui/package.json` scripts: `build`, `test`, `test:coverage`, `storybook` (also `dev`, `test:watch`, `build-storybook`).
+
 The image is built by CI. A knight pod has no Docker daemon and no Docker Hub access, so never run `docker build` here.
 
 ## Finish inside the turn
@@ -75,14 +77,13 @@ The pod sets variables that a developer machine and CI do not (`KNIGHT_NAME`, `N
 
 1. Run the failing test again with a clean environment, keeping only what the toolchain needs:
    ```bash
-   cd api && env -i PATH="$PATH" HOME="$HOME" go test ./...
-   cd ui && env -i PATH="$PATH" HOME="$HOME" npm run test
+   (cd api && env -i PATH="$PATH" HOME="$HOME" go test ./...)
+   (cd ui && env -i PATH="$PATH" HOME="$HOME" npm run test)
    ```
+   `env -i` also drops `GOMODCACHE`, `GOFLAGS`, `GOTOOLCHAIN` and `npm_config_*`; pass them back (`GOMODCACHE="$GOMODCACHE"` and so on) when the pod sets them, or the run starts with a cold cache and re-downloads.
 2. If it now passes, the test depends on the pod's ambient variables. Compare `env | sort` with what the test and its source read (`grep -rn "os.Getenv\|process.env" <test and source files>`), then fix the test so it sets or clears the variables it reads itself. Never fix it by unsetting variables in product code.
 3. If it still fails, it is a real failure: debug it as usual.
 4. Name in the PR body the variables that made the difference.
-
-`ui/package.json` scripts: `build`, `test`, `test:coverage`, `storybook` (also `dev`, `test:watch`, `build-storybook`).
 
 ## Architecture
 

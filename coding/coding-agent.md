@@ -94,9 +94,8 @@ How it was tested" \
 
 ```bash
 go build ./...
-go test ./... -v
+go test ./... -v   # the full suite: run once, at the end
 go vet ./...
-
 ```
 
 If the repository has a `manifests` / `generate` target (CRDs, deepcopy), run `make manifests generate`; the Makefile pins the generator versions.

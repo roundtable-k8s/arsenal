@@ -95,6 +95,7 @@ The pod sets variables that a developer machine and CI do not (`KNIGHT_NAME`, `N
    ```bash
    env -i PATH="$PATH" HOME="$HOME" go test ./...
    ```
+   `env -i` also drops `GOMODCACHE`, `GOFLAGS`, `GOTOOLCHAIN` and `npm_config_*`; pass them back (`GOMODCACHE="$GOMODCACHE"` and so on) when the pod sets them, or the run starts with a cold cache and re-downloads.
 2. If it now passes, the test depends on the pod's ambient variables. Compare `env | sort` with what the test and its source read (`grep -rn "os.Getenv" <test and source files>`), then fix the test so it sets or clears the variables it reads itself. Never fix it by unsetting variables in product code.
 3. If it still fails, it is a real failure: debug it as usual.
 4. Name in the PR body the variables that made the difference.
