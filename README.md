@@ -14,6 +14,7 @@ arsenal/
 │   ├── job-run/               # Scheduled-job run ledger and output checks
 │   ├── open-items-ledger/     # Carry-forward ledger protocol
 │   ├── report-generator/      # Template-based report rendering
+│   ├── run-report/            # Summarise a chain run record as markdown
 │   ├── side-by-side/          # Compare an old job's dated output with the new one
 │   ├── vault-indexer/         # Vault indexing helpers
 │   ├── web-browser/           # Headless browsing
