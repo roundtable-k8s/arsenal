@@ -11,6 +11,7 @@ arsenal/
 ├── shared/                    # Base capabilities (ALL knights)
 │   ├── daily-reports/         # Daily briefing templates
 │   ├── evidence-verification/ # Source/evidence checking
+│   ├── fleet-summary/         # Recent tasks and dead letters as a plain summary
 │   ├── job-run/               # Scheduled-job run ledger and output checks
 │   ├── open-items-ledger/     # Carry-forward ledger protocol
 │   ├── report-generator/      # Template-based report rendering
