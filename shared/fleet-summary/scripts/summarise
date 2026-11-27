@@ -8,7 +8,7 @@
 #
 # Inputs: list_tasks -> {"tasks":[...]}, list_dead_letters -> {"deadLetters":[...]},
 # list_knights -> {"knights":[...]}. --since keeps tasks by createdAt and dead letters
-# by deadLetteredAt, at or after that time (UTC, e.g. 2026-11-26T00:00:00Z).
+# by deadLetteredAt, at or after that time (Z or a +HH:MM/-HH:MM offset, e.g. 2026-11-26T00:00:00Z).
 # Reads files only; jq is the only tool needed.
 # Exit: 0 summary printed; 2 bad arguments, unreadable file, bad JSON or bad --since.
 set -euo pipefail
@@ -32,8 +32,8 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$tasks" ] && [ -n "$deadletters" ] || { usage; die "--tasks and --dead-letters are required"; }
-if [ -n "$since" ] && ! [[ $since =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]]; then
-    die "--since must be UTC ISO8601, e.g. 2026-11-26T00:00:00Z"
+if [ -n "$since" ] && ! [[ $since =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$ ]]; then
+    die "--since must be ISO8601 with Z or a +HH:MM offset, e.g. 2026-11-26T00:00:00Z"
 fi
 
 # check_file <path> <array-key>: readable, JSON object whose key is an array
@@ -48,7 +48,14 @@ check_file "$deadletters" deadLetters
 
 # Shared jq helpers. $since is passed with --arg; "" means no time filter.
 defs='
-def ts: (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) + ((capture("\\.(?<f>[0-9]+)Z$")? | ("0." + .f) | tonumber) // 0);
+def ts:
+  . as $s
+  | (($s | capture("(?<sign>[+-])(?<h>[0-9]{2}):(?<m>[0-9]{2})$")?) // null) as $o
+  | ($s | sub("[+-][0-9]{2}:[0-9]{2}$"; "Z")) as $z
+  | ((($z | sub("\\.[0-9]+Z$"; "Z")) | fromdateiso8601)
+      + (($z | capture("\\.(?<f>[0-9]+)Z$")? | ("0." + .f) | tonumber) // 0))
+    - (if $o == null then 0
+       else (($o.h | tonumber) * 3600 + ($o.m | tonumber) * 60) * (if $o.sign == "-" then -1 else 1 end) end);
 def within($stamp): $since == "" or (($stamp // "") != "" and (($stamp | ts) >= ($since | ts)));
 '
 jqr() { jq -r --arg since "$since" "$defs $1" "${@:2}"; }
@@ -66,9 +73,9 @@ else
             | sort_by([-.n, .k]) | map("\(.k)=\(.n)") | join(" ")),
           "  by knight: " + (group_by(.knight // "unknown") | map({k: (.[0].knight // "unknown"), n: length})
             | sort_by([-.n, .k]) | map("\(.k)=\(.n)") | join(" "))' "$tasks"
-    # cost in micro-dollars (integer), formatted here so the output never depends on jq number printing
-    micro=$(jqr '[.tasks[] | select(within(.createdAt)) | (.cost // 0)] | add // 0 | . * 10000 | round' "$tasks")
-    printf '  total cost: $%d.%04d\n' "$((micro / 10000))" "$((micro % 10000))"
+    # cost in 1e-4 dollars (integer), formatted here so the output never depends on jq number printing
+    units=$(jqr '[.tasks[] | select(within(.createdAt)) | (.cost // 0)] | add // 0 | . * 10000 | round' "$tasks")
+    printf '  total cost: $%d.%04d\n' "$((units / 10000))" "$((units % 10000))"
     echo "  slowest:"
     jqr '[.tasks[] | select(within(.createdAt))] | sort_by(-(.durationMs // 0)) | .[0:5][]
         | "    \((.durationMs // 0) | round) ms  \(.knight // "unknown")  \(.status // "unknown")  \(.taskId // "-")"' "$tasks"
