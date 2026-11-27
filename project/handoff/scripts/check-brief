@@ -29,12 +29,17 @@ if [ "$size" -ge "$LIMIT" ]; then
 fi
 
 # One "name<TAB>nonblank" line per "## " heading: nonblank is 1 when the body has text.
+# CRLF line endings are stripped first. A "## " line inside a ``` or ~~~ fence is body
+# text, not a heading. A line that is only an italic guidance line (_..._) outside a
+# fence is blank: it is the unfilled template's placeholder.
 sections="$(awk '
-  /^## / {
+  { sub(/\r$/, "") }
+  !fence && /^## / {
     if (name != "") print name "\t" nb
     name = substr($0, 4); sub(/[ \t]+$/, "", name); nb = 0; next
   }
-  name != "" && /[^[:space:]]/ { nb = 1 }
+  /^(```|~~~)/ { fence = !fence }
+  name != "" && /[^[:space:]]/ && (fence || !/^_.*_[[:space:]]*$/) { nb = 1 }
   END { if (name != "") print name "\t" nb }
 ' "$src")"
 
