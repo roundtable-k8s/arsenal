@@ -1,0 +1,8 @@
+{"runs":[
+ {"run":"r7","time":"2026-11-27T07:00:00Z","outcome":"succeeded","durationSeconds":12.4,"costUSD":"0.0123"},
+ {"run":"r6","time":"2026-11-26T07:00:00Z","outcome":"failed","durationSeconds":3,"costUSD":"0.0100"},
+ {"run":"r5","time":"2026-11-25T07:00:00Z","outcome":"succeeded","durationSeconds":10},
+ {"run":"r4","time":"2026-11-24T07:00:00Z","outcome":"skipped"},
+ {"run":"r3","time":"2026-11-23T07:00:00Z","outcome":"lost","durationSeconds":60,"costUSD":"0.5"},
+ {"run":"r2","time":"2026-11-22T07:00:00Z","outcome":"succeeded","durationSeconds":1,"costUSD":"0.1"}
+]}

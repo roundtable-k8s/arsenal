@@ -34,6 +34,7 @@ jq -e 'type == "object" and (.runs | type == "array")' "$runs" >/dev/null 2>&1 \
     || die "$runs: not JSON with a \"runs\" array"
 
 jq -r --argjson stuck "$stuck" '
+  def rn: (if (.namespace // "") != "" then "\(.namespace)/" else "" end) + (.run // "-");
   .runs as $r
   | ($r | map(select(.runningSeconds != null))) as $active
   | "Runs: \($r | length)  active: \($active | length)",
@@ -41,15 +42,15 @@ jq -r --argjson stuck "$stuck" '
     "  by phase: " + ($r | group_by(.phase // "unknown") | map("\(.[0].phase // "unknown")=\(length)") | if length == 0 then "-" else join("  ") end),
     ( if ($active | length) == 0 then "No active runs"
       else "Active runs:",
-           ($active | sort_by(-.runningSeconds) | .[] | "  \(.run // "-")  \(.chain // "-")  \(.phase // "-")  running \(.runningSeconds | round)s") end ),
+           ($active | sort_by(-.runningSeconds) | .[] | "  \(rn)  \(.chain // "-")  \(.phase // "-")  running \(.runningSeconds | round)s") end ),
     ( [$active[] | select(.runningSeconds > $stuck)] as $long
       | if ($long | length) == 0 then "No active runs over \($stuck)s"
         else "Active over \($stuck)s: \($long | length)",
-             ($long[] | "  \(.run // "-")  \(.chain // "-")  running \(.runningSeconds | round)s") end ),
+             ($long[] | "  \(rn)  \(.chain // "-")  running \(.runningSeconds | round)s") end ),
     ( [$r[] | select(.issue != null)] as $pk
       | if ($pk | length) == 0 then "No pickup runs"
         else "Pickup runs by issue:",
              ($pk | group_by("\(.issue.repo)#\(.issue.number)")
                | sort_by(-length) | .[]
-               | "  \(.[0].issue.repo)#\(.[0].issue.number)  runs \(length)  latest \(.[0].run // "-")") end )
+               | "  \(.[0].issue.repo)#\(.[0].issue.number)  runs \(length)  latest \(.[0] | rn)") end )
 ' "$runs"

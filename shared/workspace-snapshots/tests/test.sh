@@ -49,8 +49,12 @@ JSON
 echo '{"snapshots":[' > "$work/bad.json"
 echo '{"snapshots":[{"name":"x","createdAt":"yesterday","readyToUse":true}]}' > "$work/baddate.json"
 echo '[{"name":"x"}]' > "$work/wrong.json"
+echo '{"snapshots":[{"name":"u","readyToUse":true},{"name":"d","createdAt":"2026-11-27T11:30:00Z","readyToUse":true}]}' > "$work/undated.json"
 
+run bash "$S" --list "$work/undated.json" --max-age 3600 --now "$NOW"
+has "1 ready but undated"; check "undated ready counted" $?
 run bash "$S" --list "$work/fresh.json" --max-age 3600 --now "$NOW"
+! has "undated"; check "no undated line when none" $?
 check "fresh ready exits 0" "$rc"
 has "Newest ready snapshot: galahad-ws-2  created 2026-11-27T11:30:00Z  age 1800s"; check "newest ready and age" $?
 has "Fresh (ready and younger than 3600s): yes"; check "fresh yes" $?

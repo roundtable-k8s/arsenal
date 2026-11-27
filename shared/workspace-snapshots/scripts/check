@@ -44,6 +44,7 @@ def epoch: sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;
 | ($all | map(select(.readyToUse == true and (.createdAt // "") != "")
                | . + {t: (.createdAt | epoch)}) | sort_by(.t)) as $ready
 | ($all | map(select(.readyToUse != true))) as $pending
+| ($all | map(select(.readyToUse == true and (.createdAt // "") == "")) | length) as $undated
 | ($ready | last) as $newest
 | (if $newest == null then null else $now - $newest.t end) as $age
 | (($newest != null) and ($age < $max)) as $fresh
@@ -56,6 +57,7 @@ report=$(jq -r "${jq_args[@]}" "$prelude"'
   (if $newest == null then "Newest ready snapshot: none"
    else "Newest ready snapshot: \($newest.name)  created \($newest.createdAt)  age \($age)s" end),
   "Fresh (ready and younger than \($max)s): \(if $fresh then "yes" else "no" end)",
+  (if $undated > 0 then "\($undated) ready but undated" else empty end),
   "Pending snapshots: \($pending | length)",
   ($pending[] | "  \(.name)  created \(.createdAt // "-")"),
   (if .condition == null then "Condition: none"

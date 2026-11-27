@@ -44,7 +44,7 @@ bash /skills/shared/workspace-snapshots/scripts/check --list $D/snapshots.json -
 
 ## Steps: take a snapshot before risky work
 
-1. Call `snapshot_knight` with `name`. Use `waitSeconds` (for example 120) to wait for it to be ready; without it the reply returns at once with `ready` unset.
+1. Call `snapshot_knight` with `name`. Use `waitSeconds` (for example 120) to wait for it to be ready; without it the reply returns at once with `ready` unset. `ready` absent after `waitSeconds` means the snapshot was not ready in time; list again.
 2. If the reply has `note` saying the knight is suspended, the snapshot is taken on resume. Tell the owner; do not resume the knight to get it.
 3. Run the list check again (steps above) with a small `--max-age` such as 300 and confirm a ready snapshot is there. The list is authoritative, not `expectedName`.
 

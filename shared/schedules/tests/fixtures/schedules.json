@@ -1,0 +1,7 @@
+{"schedules":[
+ {"name":"morning","cron":"0 7 * * *","suspended":false,"managedBy":"git","nextRunAt":"2026-11-28T07:00:00Z","lastResult":{"time":"2026-11-27T07:00:00Z","outcome":"succeeded"}},
+ {"name":"nightly","cron":"0 2 * * *","suspended":false,"managedBy":"git","nextRunAt":"2026-11-28T02:00:00Z","lastResult":{"time":"2026-11-27T02:00:00Z","outcome":"failed"}},
+ {"name":"hourly","cron":"0 * * * *","suspended":false,"managedBy":"api","nextRunAt":"2026-11-27T11:00:00Z","lastResult":{"time":"2026-11-27T10:00:00Z","outcome":"skipped","skipReason":"concurrency forbids"}},
+ {"name":"weekly","cron":"0 9 * * 1","suspended":true,"suspendedBy":"annotation","managedBy":"git","lastResult":{"time":"2026-11-23T09:00:00Z","outcome":"lost"}},
+ {"name":"stuck","cron":"5 5 * * *","suspended":false,"managedBy":"api"}
+]}
