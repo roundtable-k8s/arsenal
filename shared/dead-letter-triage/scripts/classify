@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Classify open dead letters by the gateway's retry rules (docs/gateway.md, retry endpoint).
+#   classify [--summary] [<list.json>]        (reads stdin when no file is given)
+# Input: the list_dead_letters JSON, a bare array of entries or an object with a
+# "deadLetters" array. Each entry needs taskId, knight, state and reason.
+# Output: one JSON line per entry {taskId, knight, action, why}, action one of:
+#   retry        open, not chain-owned, reason lost|timeout|failed, attempt below 3
+#   rerun-chain  chain-owned (chainName set): rerun the chain, do not retry the entry
+#   skip-usage   reason usage_limited: wait for the plan window
+#   inspect      everything else (non-open, refused, unknown reason, attempt 3+, no attempt)
+# --summary prints one JSON object with the count per action instead.
+# Exit codes: 0 ok, 2 bad arguments or bad input. Reads only; calls no gateway.
+set -euo pipefail
+
+usage() {
+  echo "usage: classify [--summary] [<list.json>]" >&2
+  exit 2
+}
+
+bad_input() {
+  echo "classify: $1" >&2
+  exit 2
+}
+
+summary=0
+file=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --summary) summary=1; shift ;;
+    -h|--help) usage ;;
+    -*) usage ;;
+    *)  [ -z "$file" ] || usage; file="$1"; shift ;;
+  esac
+done
+
+if [ -n "$file" ]; then
+  [ -f "$file" ] && [ -r "$file" ] || bad_input "cannot read $file"
+  json="$(cat -- "$file")"
+else
+  json="$(cat)"
+fi
+
+# Accept a bare array or {"deadLetters": [...]}; every entry needs the four fields.
+entries='def entries:
+  if type == "array" then .
+  elif type == "object" and (.deadLetters | type) == "array" then .deadLetters
+  else error("expected an array of dead letters") end;'
+
+printf '%s' "$json" | jq -e "$entries"'
+  entries | all(.[]; type == "object" and has("taskId") and has("knight")
+                     and has("state") and has("reason"))' >/dev/null 2>&1 \
+  || bad_input "input is not a list of dead-letter entries with taskId, knight, state and reason"
+
+# The gateway rules, applied in order. Non-open entries are never retried.
+program="$entries"'
+def action:
+  if .state != "open" then
+    {action: "inspect", why: ("state is " + (.state | tostring) + "; only open entries can be retried")}
+  elif ((.chainName // "") != "") then
+    {action: "rerun-chain", why: ("chain-owned by " + .chainName
+      + (if (.stepName // "") != "" then " (step " + .stepName + ")" else "" end)
+      + ": rerun the chain or let its retryPolicy handle it")}
+  elif .reason == "usage_limited" then
+    {action: "skip-usage", why: "usage limit reached: wait for the plan window"}
+  elif .reason == "refused" then
+    {action: "inspect", why: "refused by the knight: needs a human look"}
+  elif (.reason == "lost" or .reason == "timeout" or .reason == "failed") then
+    if (.attempt | type) != "number" then
+      {action: "inspect", why: "attempt count unknown"}
+    elif .attempt >= 3 then
+      {action: "inspect", why: ("attempt " + (.attempt | tostring) + ": already failed 3 times, not retried again")}
+    else
+      {action: "retry", why: ("reason " + .reason + ", attempt " + (.attempt | tostring) + ": safe to retry")}
+    end
+  else
+    {action: "inspect", why: ("unknown reason " + (.reason | tostring))}
+  end;
+entries | .[] | . as $e | ($e | action) as $c
+  | {taskId: $e.taskId, knight: $e.knight, action: $c.action, why: $c.why}'
+
+rows="$(printf '%s' "$json" | jq -c "$program")"
+
+if [ "$summary" -eq 1 ]; then
+  printf '%s\n' "$rows" | jq -sc '
+    def count($a): map(select(.action == $a)) | length;
+    {retry: count("retry"), "rerun-chain": count("rerun-chain"),
+     "skip-usage": count("skip-usage"), inspect: count("inspect")}'
+elif [ -n "$rows" ]; then
+  printf '%s\n' "$rows"
+fi
