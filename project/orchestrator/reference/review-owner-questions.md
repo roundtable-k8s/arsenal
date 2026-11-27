@@ -4,12 +4,13 @@ A one-off task: go through a batch of issues that wait on a decision, settle eac
 one that the principles or the decision register answer, and list the rest for
 the owner. It is not part of the 30-minute check.
 
-Sources, in the operator repository (`roundtable-k8s/roundtable`):
+Sources, in the operator repository (the one SKILL.md calls "the operator
+repository"; for example `roundtable-k8s/roundtable`):
 
 - `docs/principles.md`: the principles.
 - `docs/decisions.md`: the decision register.
 
-Read both with `gh api repos/roundtable-k8s/roundtable/contents/docs/<file>` (the
+Read both with `gh api repos/<operator repo>/contents/docs/<file>` (the
 file content is base64 in `.content`) and read each one once per task.
 
 ## Procedure
