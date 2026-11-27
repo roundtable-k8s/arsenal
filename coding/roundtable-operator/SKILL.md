@@ -5,7 +5,7 @@ description: Work within the roundtable operator repo (Go, Kubebuilder). Use whe
 
 # roundtable-operator Codebase Guide
 
-_Last checked against roundtable-k8s/roundtable @ `9fca414`. Layout below is by directory; run `ls internal/` to see what changed since._
+_Last checked against roundtable-k8s/roundtable @ `74e10d2`. Layout below is by directory; run `ls internal/` to see what changed since._
 
 ## Quick Reference
 
@@ -17,8 +17,9 @@ _Last checked against roundtable-k8s/roundtable @ `9fca414`. Layout below is by 
 | CRD Group | `ai.roundtable.io/v1alpha1` |
 | Kinds | Knight, Chain, Mission, RoundTable, Trigger (plus IssuePickup/PRFeedback types in `api/v1alpha1`) |
 | NATS | `github.com/nats-io/nats.go` (version in `go.mod`) |
-| CI | `.github/workflows/ci.yml` (vet, lint, test, helm-check), Docker build+push to GHCR |
-| Image | `ghcr.io/roundtable-k8s/roundtable:<sha>` |
+| CI | `.github/workflows/ci.yml` (vet, lint, test, helm-check; on main also publishes the chart), `e2e.yml` (kind harness), `release.yml` (on `vX.Y.Z` tags), `tools-builder.yml` (tools image), `merge-guard.yml`, `tilt.yml`, `trigger-autodeploy.yml` |
+| Image | `ghcr.io/roundtable-k8s/roundtable:<sha>` (also `:latest`) from `ci.yml` on main; `:vX.Y.Z` on release (`release.yml`) |
+| Chart | `oci://ghcr.io/roundtable-k8s/charts`: main pushes `<Chart.yaml version>-dev.<short sha>` (`appVersion` = full SHA); release tags `vX.Y.Z` publish `X.Y.Z` |
 
 ## Project Layout
 
@@ -118,6 +119,8 @@ Key fields:
 ## Helm Chart
 
 Located at `charts/roundtable-operator/`. CRDs go in `crds/` (plain YAML, no templating).
+
+Versions: CI overwrites `Chart.yaml` on main with `<version>-dev.<short sha>` (the committed `version` is the base). The main chart step fails when the tag `v<version>` already exists, so when you bump `version` in `Chart.yaml`, never reuse a released chart version.
 
 **Trap**: `cp *.yaml` into `crds/` dir can grab kustomization.yaml → breaks chart upgrade. Be explicit with filenames.
 

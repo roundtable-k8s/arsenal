@@ -5,7 +5,7 @@ description: Work within the knights monorepo (TypeScript/Node) that holds the p
 
 # knights Monorepo Codebase Guide (pi-knight, claude-knight, core)
 
-_Last checked against roundtable-k8s/knights @ `491a5e8`. The old standalone `roundtable-k8s/pi-knight` repo is no longer the code home; the container image is still `ghcr.io/roundtable-k8s/pi-knight`._
+_Last checked against roundtable-k8s/knights @ `f780966`. The old standalone `roundtable-k8s/pi-knight` repo is no longer the code home; the container image is still `ghcr.io/roundtable-k8s/pi-knight`._
 
 ## Quick Reference
 
@@ -16,7 +16,8 @@ _Last checked against roundtable-k8s/knights @ `491a5e8`. The old standalone `ro
 | pi SDKs | `@earendil-works/pi-agent-core`, `pi-ai`, `pi-coding-agent` (pi-knight) |
 | NATS | `@nats-io/*` v3 (jetstream, kv, services, transport-node), in core |
 | Tests | `tsx --test` per package (`tests/` dir) |
-| Image | `ghcr.io/roundtable-k8s/pi-knight:<sha>` (Dockerfile in `packages/pi-knight/`) |
+| CI | `.github/workflows/ci.yml` (typecheck, test, lint); image builds in `pi-knight.yml` and `claude-knight.yml` |
+| Image | `ghcr.io/roundtable-k8s/pi-knight:<sha>` (Dockerfile in `packages/pi-knight/`) and `ghcr.io/roundtable-k8s/claude-knight:<sha>` (both also `:latest`, pushed on main by their workflow) |
 
 ## Project Layout
 
