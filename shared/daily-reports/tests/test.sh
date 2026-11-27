@@ -38,11 +38,14 @@ for pair in null:null false:boolean; do
   printf "%s" "$lit" > "$work/lit.json"; run "$V" "$work/lit.json"
   [ $rc -eq 1 ] && grep -q "top level is $tn, not an object" "$work/err" && ! grep -q "not valid JSON" "$work/err"; check "bare $lit is valid JSON but not an object" $?
 done
-for case in empty whitespace multi; do
-  case $case in empty) printf '' ;; whitespace) printf ' \n\t\n' ;; multi) printf '{} {}' ;; esac > "$work/odd.json"
+for case in empty whitespace; do
+  case $case in empty) printf '' ;; whitespace) printf ' \n\t\n' ;; esac > "$work/odd.json"
   run "$V" "$work/odd.json"
   [ $rc -eq 1 ] && grep -qF "not valid JSON" "$work/err" && [ "$(grep -c "not valid JSON" "$work/err")" -eq 1 ]; check "$case input fails as not valid JSON" $?
 done
+printf '{} {}' > "$work/multi.json"
+run "$V" "$work/multi.json"
+[ $rc -eq 1 ] && grep -qF '$: expected exactly one JSON document' "$work/err" && ! grep -q "not valid JSON" "$work/err"; check "multi-document input says exactly one JSON document expected" $?
 
 # ---- one failing case per rule ----
 for k in $(jq -r '.required[]' "$schema"); do

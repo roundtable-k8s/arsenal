@@ -57,3 +57,5 @@ letters can be retried. Do not use it to dismiss entries: there is no endpoint f
 
 `classify` exits 0 on success and 2 on bad arguments or input that is not a list of
 dead-letter entries. With exit 2, stop and report the error; do not retry anything.
+An entry with missing fields does not fail the input: it is classified `inspect` with
+`missing fields: ...` naming the absent fields, and the other entries are still classified.

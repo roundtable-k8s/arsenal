@@ -44,7 +44,7 @@ bash $S/summarise --tasks $D/tasks.json --dead-letters $D/deadletters.json --sin
 
 - `--tasks FILE` and `--dead-letters FILE`: required.
 - `--knights FILE`: adds a "Knights not ready" line.
-- `--since ISO8601`: UTC, such as `2026-11-26T00:00:00Z`. Keeps tasks by `createdAt` and dead letters by `deadLetteredAt`, at or after that time. Entries without the timestamp are left out.
+- `--since ISO8601`: an ISO 8601 time such as `2026-11-26T00:00:00Z`. `Z` or a `+HH:MM` / `-HH:MM` offset is accepted; the cut-off is compared in UTC. Keeps tasks by `createdAt` and dead letters by `deadLetteredAt`, at or after that time. Entries without the timestamp are left out.
 
 ## Reading the Output
 
