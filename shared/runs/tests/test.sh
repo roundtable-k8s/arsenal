@@ -17,7 +17,7 @@ cat > "$work/r.json" <<'JSON'
  {"run":"run-a1","chain":"morning-brief","phase":"Running","source":"trigger","ageSeconds":9000,"runningSeconds":9000,"traceId":"t1"},
  {"run":"run-b2","chain":"pickup-fix","phase":"Running","source":"pickup","ageSeconds":300,"runningSeconds":120,"traceId":"t2","issue":{"repo":"roundtable-k8s/arsenal","number":122}},
  {"run":"run-c3","chain":"pickup-fix","phase":"Succeeded","source":"pickup","ageSeconds":5000,"traceId":"t3","issue":{"repo":"roundtable-k8s/arsenal","number":122}},
- {"run":"run-d4","chain":"fleet-check","phase":"Failed","source":"gateway","ageSeconds":800,"traceId":"t4"},
+ {"run":"run-d4","namespace":"fleet","chain":"fleet-check","phase":"Failed","source":"gateway","ageSeconds":800,"traceId":"t4"},
  {"run":"run-e5","chain":"fleet-check","phase":"Succeeded","source":"gateway","ageSeconds":100,"traceId":"t5"},
  {"run":"run-f6","chain":"pickup-fix","phase":"Running","source":"pickup","ageSeconds":50,"runningSeconds":50,"traceId":"t6","issue":{"repo":"roundtable-k8s/roundtable","number":7}}
 ]}
@@ -25,6 +25,12 @@ JSON
 echo '{"runs":[]}' > "$work/empty.json"
 echo '{"runs":[' > "$work/bad.json"
 echo '{"items":[]}' > "$work/shape.json"
+
+nsrun='{"runs":[{"run":"run-n1","namespace":"fleet","chain":"c","phase":"Running","source":"gateway","runningSeconds":9000}]}'
+echo "$nsrun" > "$work/ns.json"
+run bash "$S" --runs "$work/ns.json"
+has "  fleet/run-n1  c  Running  running 9000s"; check "namespace/run on active line" $?
+has "  fleet/run-n1  c  running 9000s"; check "namespace/run on stuck line" $?
 
 run bash "$S" --runs "$work/r.json"
 check "exit 0" "$([ "$rc" -eq 0 ]; echo $?)"

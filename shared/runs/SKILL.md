@@ -40,7 +40,7 @@ A run record has `run`, `chain`, `phase`, `source`, `ageSeconds`, `runningSecond
 bash /skills/shared/runs/scripts/report --runs $D/runs.json [--stuck-after 7200]
 ```
 
-4. For each flagged run, call `get_run` (pass its `namespace` if it is not the default one; the report does not print it) before drawing conclusions. Do not infer a failure from age alone.
+4. For each flagged run, call `get_run` (the report prints `namespace/run` when the run has a namespace; pass the namespace part to `get_run`) before drawing conclusions. Do not infer a failure from age alone.
 5. Add a conclusion in your own words: what is running, what is stuck, which issues are being worked. Do not copy the output unchanged.
 
 The report prints counts by source and by phase, the active runs with their `runningSeconds`, the runs over the `--stuck-after` threshold (default 7200 seconds), and the pickup runs grouped by issue.

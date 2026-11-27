@@ -28,6 +28,7 @@ Creating, replacing and deleting schedules are not MCP tools; do not look for th
 | `suspend_schedule` | Stop a schedule firing. |
 | `resume_schedule` | Undo `suspend_schedule`. |
 | `run_schedule` | Fire once now. |
+| `schedule_next_runs` | Next fire times, in UTC and in the time zone, of an existing schedule (`name`, optional `namespace`) or of a cron expression that does not exist yet (`cron`, optional `timeZone`, default UTC); give one of the two, not both. `count` defaults to 5, max 50. Cron ticks only: skip rules are not applied. Read-only. |
 | `list_schedule_runs` | A schedule's runs, newest first; `limit` caps them. |
 | `get_schedule_run` | The result of one run (`name` and `run`). |
 
