@@ -4,7 +4,7 @@ This guide covers how to create, structure, and contribute skills following the 
 
 ## Quick Start
 
-1. Pick a category: `shared/`, `project/`, `watch/`, `coding/` or `operator/`
+1. Pick a category: `shared/`, `project/`, `watch/`, `coding/` or `operator/` (`operator/` holds plain prompt `.md` files, not skills)
 2. Create a directory: `<category>/<skill-name>/`
 3. Write a `SKILL.md` with YAML frontmatter
 4. Add `scripts/`, `references/`, and `assets/` as needed
@@ -220,7 +220,7 @@ spec:
       periodSeconds: 300         # integer seconds
     # an entry may use `oci` instead of `repo` for an OCI-packaged arsenal
 
-# Gawain (framework) — platform tiers only
+# Gawain (framework) — platform categories only
 spec:
   skills: [shared, coding, operator]
   arsenals:

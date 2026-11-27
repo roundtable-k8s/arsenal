@@ -12,7 +12,7 @@ You are the **Morning Briefing Editor**. Domain knights produce summaries. Your 
 
 ## What this knight can and cannot do
 
-- The vault is mounted read-only unless the Knight lists the sub-path in `spec.vault.writablePaths` (no default: an absent or empty list means no writable paths); entries are relative to the vault root with a trailing slash (e.g. `Agents/Briefings/`, mounted at `/vault/Agents/Briefings`), never absolute `/vault/...` paths, and a write anywhere else fails with `Read-only file system`.
+- The vault is mounted read-only unless the Knight lists the sub-path in `spec.vault.writablePaths` (no default: an absent or empty list means no writable paths); entries are relative to the vault root, and the trailing slash is the convention, not required (e.g. `Agents/Briefings/`, mounted at `/vault/Agents/Briefings`), never absolute `/vault/...` paths, and a write anywhere else fails with `Read-only file system`.
 - It writes the briefing under `$BRIEFINGS_DIR` (default `/vault/Agents/Briefings`), so `Agents/Briefings/` must be in `writablePaths`. If you set `RT_BRIEFINGS_DIR` to another path under `/vault`, list that path relative to the vault root (drop the `/vault/` prefix) instead.
 - `/data` is the knight's own persistent volume and is always writable.
 - If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path).
@@ -24,19 +24,15 @@ You are the **Morning Briefing Editor**. Domain knights produce summaries. Your 
 
 ## Vault layout
 
-Paths in this skill are built from these roots (defined once, here). Each can be
+Paths in this skill are built from this root (defined once, here). It can be
 overridden by the environment variable when it is set:
 
 | Root | Default | Override |
 |---|---|---|
 | Briefings | `/vault/Agents/Briefings` | `RT_BRIEFINGS_DIR` |
-| Reports | `/vault/Agents/Roundtable` | `RT_REPORTS_DIR` |
-| Night Watch | `/vault/Agents/NightWatch` | `RT_NIGHTWATCH_DIR` |
 
 ```bash
 BRIEFINGS_DIR="${RT_BRIEFINGS_DIR:-/vault/Agents/Briefings}"
-REPORTS_DIR="${RT_REPORTS_DIR:-/vault/Agents/Roundtable}"
-NIGHTWATCH_DIR="${RT_NIGHTWATCH_DIR:-/vault/Agents/NightWatch}"
 ```
 
 ## Output Structure

@@ -18,7 +18,7 @@ for d in project/briefing-synthesis shared/daily-reports shared/open-items-ledge
   check "$d" "writablePaths"
 done
 # the vault-write sentence must be identical in the five vault skills
-VW='The vault is mounted read-only unless the Knight lists the sub-path in `spec.vault.writablePaths` (no default: an absent or empty list means no writable paths); entries are relative to the vault root with a trailing slash (e.g. `Agents/Briefings/`, mounted at `/vault/Agents/Briefings`), never absolute `/vault/...` paths, and a write anywhere else fails with `Read-only file system`.'
+VW='The vault is mounted read-only unless the Knight lists the sub-path in `spec.vault.writablePaths` (no default: an absent or empty list means no writable paths); entries are relative to the vault root, and the trailing slash is the convention, not required (e.g. `Agents/Briefings/`, mounted at `/vault/Agents/Briefings`), never absolute `/vault/...` paths, and a write anywhere else fails with `Read-only file system`.'
 for d in project/briefing-synthesis shared/daily-reports shared/open-items-ledger \
          watch/night-watch-triage shared/vault-indexer; do
   grep -qF -- "$VW" "$d/SKILL.md" || { echo "FAIL: $d/SKILL.md vault-write sentence differs"; fail=1; }
