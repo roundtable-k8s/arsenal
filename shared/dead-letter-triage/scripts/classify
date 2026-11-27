@@ -3,7 +3,8 @@
 #   classify [--summary] [<list.json>]        (reads stdin when no file is given)
 # Input: the list_dead_letters JSON, a bare array of entries or an object with a
 # "deadLetters" array. Each entry needs taskId, knight, state and reason.
-# Output: one JSON line per entry {taskId, knight, action, why}, action one of:
+# Output: one JSON line per entry {taskId, knight, action, why}, plus traceId and
+# chainName when the entry has them (non-empty). Action one of:
 #   retry        open, not chain-owned, reason lost|timeout|failed, attempt below 3
 #   rerun-chain  chain-owned (chainName set): rerun the chain, do not retry the entry
 #   skip-usage   reason usage_limited: wait for the plan window
@@ -76,7 +77,9 @@ def action:
     {action: "inspect", why: ("unknown reason " + (.reason | tostring))}
   end;
 entries | .[] | . as $e | ($e | action) as $c
-  | {taskId: $e.taskId, knight: $e.knight, action: $c.action, why: $c.why}'
+  | {taskId: $e.taskId, knight: $e.knight, action: $c.action, why: $c.why}
+    + (if ($e.traceId // "") != "" then {traceId: $e.traceId} else {} end)
+    + (if ($e.chainName // "") != "" then {chainName: $e.chainName} else {} end)'
 
 rows="$(printf '%s' "$json" | jq -c "$program")"
 

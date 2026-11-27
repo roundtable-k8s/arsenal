@@ -83,5 +83,21 @@ run "$C" "$work/object.json"; [ $rc -eq 2 ]; check "classify: object without dea
 printf '"text"' > "$work/string.json"
 run "$C" "$work/string.json"; [ $rc -eq 2 ]; check "classify: JSON string exits 2" $?
 
+# ---- traceId and chainName are added when present, nothing else changes ----
+printf '[{"taskId":"tr-1","knight":"galahad","state":"open","reason":"lost","attempt":1,"traceId":"abc123"},{"taskId":"tr-2","knight":"galahad","state":"open","reason":"lost","attempt":1,"traceId":null},{"taskId":"tr-3","knight":"lancelot","state":"open","reason":"failed","attempt":1,"chainName":"nightwatch","stepName":"s","traceId":"def456"}]' > "$work/trace.json"
+run "$C" "$work/trace.json"; [ $rc -eq 0 ]; check "classify: trace fixture exits 0" $?
+jq -e 'select(.taskId == "tr-1") | .traceId == "abc123" and (has("chainName") | not)' <<<"$out" >/dev/null
+check "classify: traceId is passed through when set" $?
+jq -e 'select(.taskId == "tr-2") | (has("traceId") | not) and (has("chainName") | not)' <<<"$out" >/dev/null
+check "classify: null traceId is left out" $?
+jq -e 'select(.taskId == "tr-3") | .chainName == "nightwatch" and .traceId == "def456" and .action == "rerun-chain"' <<<"$out" >/dev/null
+check "classify: chainName and traceId are passed through on a chain entry" $?
+jq -e 'select(.taskId == "tr-1") | keys | sort == ["action","knight","taskId","traceId","why"]' <<<"$out" >/dev/null
+check "classify: output keys are exactly the base fields plus traceId" $?
+run "$C" --summary "$work/trace.json"; [ "$out" = '{"retry":2,"rerun-chain":1,"skip-usage":0,"inspect":0}' ]
+check "classify: --summary is unchanged by the new fields" $?
+run "$C" "$work/fixture.json"; [ $rc -eq 0 ] && ! grep -q 'traceId' <<<"$out"
+check "classify: fixture without trace fields prints no traceId" $?
+
 echo "$n checks, $fails failed"
 [ $fails -eq 0 ]
