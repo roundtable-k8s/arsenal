@@ -48,7 +48,8 @@ requeue or alert on it; note `chain/taskId` in the log line `in flight:`. Treat
 it as stuck only when the same `taskId` is still running at the next check.
 `pickedUpAt: null` means no knight has picked the step up yet; phase
 `Deferred` means it waits for plan quota, so it is waiting, not stuck (the
-step timeout counts from pickup). If `cluster.operator` is `null`, you cannot tell: say so in the log.
+step timeout counts from pickup).
+If `cluster.operator` is `null`, you cannot tell: say so in the log.
 
 Everything below reads this snapshot. Re-run `status` only after you changed
 something and need to see the result.
@@ -132,7 +133,9 @@ the snapshot). **When fewer than about eight are ready or in flight:**
    (`examples/recipes/backlog-grooming` in the operator repository) and
    [`reference/issue-format.md`](reference/issue-format.md). Check every file,
    type and function you name. Skip work that already has an open issue. Use
-   `project/github-pm` for the `gh` commands.
+   `project/github-pm` for the `gh` commands. Label each issue you write
+   `groomed`, never `rt:ready`, unless the task says to add `rt:ready` (the same
+   rule as `project/github-pm` and `reference/groom.md`).
 3. When the backlog is nearly empty (no epic has work left that passes the
    issue-format rules), say so plainly in the log and in an alert.
 
@@ -146,7 +149,9 @@ an issue held for a decision):
 
 - Decide it yourself when the principles (`docs/principles.md` in the operator
   repository) and the decision register (`docs/decisions.md` in the same
-  repository) answer it. Comment on the issue:
+  repository) answer it. Read the register with
+  `gh api repos/<operator repo>/contents/docs/decisions.md` (the file content is
+  base64 in `.content`). Comment on the issue:
 
   ```
   Decided <YYYY-MM-DD> (orchestrator): <the decision>.
@@ -187,9 +192,15 @@ in the log.
 
 ## One-off tasks
 
-When a task asks you to review a batch of owner-question issues (a list, or a label such as `needs-human` or `product-direction`), follow [`reference/review-owner-questions.md`](reference/review-owner-questions.md) instead of the numbered procedure.
+When a task asks you to review a batch of owner-question issues (a list, or a
+label such as `needs-human` or `product-direction`), follow
+[`reference/review-owner-questions.md`](reference/review-owner-questions.md)
+instead of the 30-minute check (steps 1–6 above).
 
-A task that says to groom repositories follows [`reference/groom.md`](reference/groom.md) instead of the 30-minute check. The four-issue cap of step 4 applies to checks only; a groom task's cap is the one the task names (default 8 per repository).
+A task that says to groom repositories follows
+[`reference/groom.md`](reference/groom.md) instead of the 30-minute check
+(steps 1–6 above). The four-issue cap of step 4 applies to checks only; a groom
+task's cap is the one the task names (default 8 per repository).
 
 ## Limits
 

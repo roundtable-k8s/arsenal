@@ -16,7 +16,9 @@ Inputs from the task: the repositories to groom, and the cap per repository
 
 ## 2. Read before drafting (each subagent)
 
-- List open issues: `gh issue list --repo <r> --state open --limit 200`.
+- List open issues: `gh issue list --repo <r> --state open --limit 1000`. A
+  smaller limit cuts the list off on a large repository, so a duplicate could be
+  filed; if the list reaches 1000, say so in the report.
 - Search closed issues by keyword before writing anything, so that a fixed or
   rejected idea is not filed again:
   `gh issue list --repo <r> --state all --search "<keywords>"`.
