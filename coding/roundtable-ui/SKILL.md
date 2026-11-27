@@ -5,7 +5,7 @@ description: Work within the roundtable-ui dashboard repo (React + Go API). Use 
 
 # roundtable-ui Codebase Guide
 
-_Last checked against roundtable-k8s/roundtable-ui @ `f423069`. Layout is by directory and pattern; run `ls api ui/src/*` for the current files._
+_Last checked against roundtable-k8s/roundtable-ui @ `73de9be`. Layout is by directory and pattern; run `ls api ui/src/*` for the current files._
 
 ## Quick Reference
 
@@ -15,7 +15,7 @@ _Last checked against roundtable-k8s/roundtable-ui @ `f423069`. Layout is by dir
 | Backend | Go (see `api/go.mod`), gorilla/mux + gorilla/websocket |
 | Tests | Vitest + Testing Library (UI), Go test (API) |
 | Storybook | v8.6 for component development |
-| CI | npm build + go vet + Docker multi-stage build |
+| CI | `build.yaml`: npm ci + npm run build, go vet, go test -race, Docker build (pushes to GHCR on main only). The UI Vitest suite is not run in CI yet |
 | Image | `ghcr.io/roundtable-k8s/roundtable-ui:<sha>` |
 
 ## Project Layout
@@ -47,7 +47,7 @@ Dockerfile             Multi-stage: node→go→alpine
 ```bash
 # Frontend
 cd ui
-npm install
+npm ci                 # same as CI and the Dockerfile
 npm run build          # tsc -b && vite build
 npm run dev            # Vite dev server
 npm run test           # Vitest

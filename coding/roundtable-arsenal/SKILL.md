@@ -83,12 +83,15 @@ Instructions, workflows, and guidance here.
 
 ## CI Validation
 
-The `validate-skills.yaml` workflow checks:
-- Frontmatter has `name` and `description`
-- `name` equals the directory name
-- Script files are executable
+The `validate-skills.yaml` workflow runs these steps, in order:
+- **Validate SKILL.md frontmatter**: starts with `---`, YAML parses, `name` is present, lowercase with hyphens and at most 64 chars, `name` equals the directory name, `description` is present and at most 1024 chars
+- **Check script permissions**: every `*.sh`, `*.py` and every file under a `scripts/` dir with a `#!` line is executable
+- **Check test tools**: `jq`, `sqlite3`, `yq`, `python3` and `curl` are on the runner (the vault-indexer test would otherwise skip silently)
+- **Run script tests**: runs `project/*/tests/*.sh`, `shared/*/tests/*.sh` and `tests/*.sh`, which includes `tests/layout.test.sh` (every skill is listed in README and every `scripts/`, `references/`, `assets/` path in a SKILL.md exists)
+- **shellcheck**: `shellcheck -S warning` on every bash or sh script under a `scripts/` dir
+- **Validate skill directory structure**: warns on files at a skill root other than `SKILL.md`, `scripts`, `references`, `assets` and `LICENSE*`. It only prints warnings and does not fail the job.
 
-It does not check references or run script tests (see `tests/layout.test.sh`).
+Run `bash tests/layout.test.sh` locally to check references before you push.
 
 ## Git Sync
 
