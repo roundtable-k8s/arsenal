@@ -25,7 +25,7 @@ Cancelling and rerunning runs are not available here. Summarising a single finis
 
 | Tool | Use |
 |------|-----|
-| `list_runs` | Runs, newest first. Filters: `namespace`, `chain`, `phase`, `source` (`gateway`, `trigger`, `pickup` or `all`), `active` (true for runs still going), `issue` (`owner/repo#n`), `limit`. |
+| `list_runs` | Runs, newest first. Filters: `namespace`, `chain`, `phase`, `source` (`gateway`, `trigger`, `pickup` or `all`; defaults to `gateway`), `active` (true for runs still going), `issue` (`owner/repo#n`), `limit`. |
 | `get_run` | One run by its id (`run` field), with its step results. |
 
 A run record has `run`, `chain`, `phase`, `source`, `ageSeconds`, `runningSeconds` (only while active), `traceId` and, for pickup runs, `issue: {repo, number}`.
@@ -33,14 +33,14 @@ A run record has `run`, `chain`, `phase`, `source`, `ageSeconds`, `runningSecond
 ## Steps: run report
 
 1. `D=$(mktemp -d)`.
-2. Call `list_runs` (add `active: true` to see only runs still going) and save the reply as `$D/runs.json`.
+2. Call `list_runs` with `source: all`; without it only gateway runs come back and the pickup and trigger runs are missing. Add `active: true` to see only runs still going. Save the reply as `$D/runs.json`.
 3. Run the script:
 
 ```bash
 bash /skills/shared/runs/scripts/report --runs $D/runs.json [--stuck-after 7200]
 ```
 
-4. For each flagged run, call `get_run` before drawing conclusions. Do not infer a failure from age alone.
+4. For each flagged run, call `get_run` (pass its `namespace` if it is not the default one; the report does not print it) before drawing conclusions. Do not infer a failure from age alone.
 5. Add a conclusion in your own words: what is running, what is stuck, which issues are being worked. Do not copy the output unchanged.
 
 The report prints counts by source and by phase, the active runs with their `runningSeconds`, the runs over the `--stuck-after` threshold (default 7200 seconds), and the pickup runs grouped by issue.

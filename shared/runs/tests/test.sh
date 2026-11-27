@@ -14,12 +14,12 @@ has() { grep -qF -- "$1" <<<"$out"; }
 
 cat > "$work/r.json" <<'JSON'
 {"runs":[
- {"run":"run-a1","chain":"morning-brief","phase":"running","source":"trigger","ageSeconds":9000,"runningSeconds":9000,"traceId":"t1"},
- {"run":"run-b2","chain":"pickup-fix","phase":"running","source":"pickup","ageSeconds":300,"runningSeconds":120,"traceId":"t2","issue":{"repo":"roundtable-k8s/arsenal","number":122}},
- {"run":"run-c3","chain":"pickup-fix","phase":"succeeded","source":"pickup","ageSeconds":5000,"traceId":"t3","issue":{"repo":"roundtable-k8s/arsenal","number":122}},
- {"run":"run-d4","chain":"fleet-check","phase":"failed","source":"gateway","ageSeconds":800,"traceId":"t4"},
- {"run":"run-e5","chain":"fleet-check","phase":"succeeded","source":"gateway","ageSeconds":100,"traceId":"t5"},
- {"run":"run-f6","chain":"pickup-fix","phase":"running","source":"pickup","ageSeconds":50,"runningSeconds":50,"traceId":"t6","issue":{"repo":"roundtable-k8s/roundtable","number":7}}
+ {"run":"run-a1","chain":"morning-brief","phase":"Running","source":"trigger","ageSeconds":9000,"runningSeconds":9000,"traceId":"t1"},
+ {"run":"run-b2","chain":"pickup-fix","phase":"Running","source":"pickup","ageSeconds":300,"runningSeconds":120,"traceId":"t2","issue":{"repo":"roundtable-k8s/arsenal","number":122}},
+ {"run":"run-c3","chain":"pickup-fix","phase":"Succeeded","source":"pickup","ageSeconds":5000,"traceId":"t3","issue":{"repo":"roundtable-k8s/arsenal","number":122}},
+ {"run":"run-d4","chain":"fleet-check","phase":"Failed","source":"gateway","ageSeconds":800,"traceId":"t4"},
+ {"run":"run-e5","chain":"fleet-check","phase":"Succeeded","source":"gateway","ageSeconds":100,"traceId":"t5"},
+ {"run":"run-f6","chain":"pickup-fix","phase":"Running","source":"pickup","ageSeconds":50,"runningSeconds":50,"traceId":"t6","issue":{"repo":"roundtable-k8s/roundtable","number":7}}
 ]}
 JSON
 echo '{"runs":[]}' > "$work/empty.json"
@@ -30,10 +30,10 @@ run bash "$S" --runs "$work/r.json"
 check "exit 0" "$([ "$rc" -eq 0 ]; echo $?)"
 has "Runs: 6  active: 3"; check "total and active counts" $?
 has "by source: gateway=2  pickup=3  trigger=1"; check "counts by source" $?
-has "by phase: failed=1  running=3  succeeded=2"; check "counts by phase" $?
-has "  run-a1  morning-brief  running  running 9000s"; check "active run listed" $?
-has "  run-b2  pickup-fix  running  running 120s"; check "short active run listed" $?
-! has "run-c3  pickup-fix  succeeded  running"; check "finished run not in active list" $?
+has "by phase: Failed=1  Running=3  Succeeded=2"; check "counts by phase" $?
+has "  run-a1  morning-brief  Running  running 9000s"; check "active run listed" $?
+has "  run-b2  pickup-fix  Running  running 120s"; check "short active run listed" $?
+! has "run-c3  pickup-fix  Succeeded  running"; check "finished run not in active list" $?
 has "Active over 7200s: 1"; check "stuck count" $?
 has "  run-a1  morning-brief  running 9000s"; check "stuck run listed" $?
 has "Pickup runs by issue:"; check "pickup section" $?
