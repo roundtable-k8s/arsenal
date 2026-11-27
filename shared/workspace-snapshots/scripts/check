@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Tell whether a knight has a fresh, ready workspace snapshot, from a
+# list_knight_snapshots reply: the newest ready snapshot and its age, the
+# snapshots still pending, and the WorkspaceSnapshots condition.
+#
+# Usage:
+#   check --list FILE --max-age SECONDS [--now EPOCH]
+#
+# Input: list_knight_snapshots -> {"knight","namespace","snapshots":[{"name","createdAt","readyToUse"}],"condition":{...}}
+# --now defaults to the current time (unix seconds). Reads files only; jq is the only tool needed.
+# Exit: 0 a ready snapshot younger than max-age exists; 1 none does;
+#       2 bad arguments, unreadable file, bad JSON or an unparsable createdAt.
+set -euo pipefail
+export LC_ALL=C
+
+die() { echo "check: $*" >&2; exit 2; }
+usage() { echo "usage: check --list FILE --max-age SECONDS [--now EPOCH]" >&2; }
+
+list=""; max_age=""; now=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --list)    [ $# -ge 2 ] || { usage; die "--list needs a value"; }; list=$2; shift 2 ;;
+        --max-age) [ $# -ge 2 ] || { usage; die "--max-age needs a value"; }; max_age=$2; shift 2 ;;
+        --now)     [ $# -ge 2 ] || { usage; die "--now needs a value"; }; now=$2; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) usage; die "unknown option or argument: $1" ;;
+    esac
+done
+[ -n "$list" ] || { usage; die "--list is required"; }
+[ -n "$max_age" ] || { usage; die "--max-age is required"; }
+[[ "$max_age" =~ ^[0-9]+$ ]] || die "--max-age must be a whole number of seconds"
+if [ -z "$now" ]; then now=$(date +%s); fi
+[[ "$now" =~ ^[0-9]+$ ]] || die "--now must be a unix time in seconds"
+
+[ -r "$list" ] || die "cannot read $list"
+jq -e 'type == "object" and (.snapshots | type == "array") and all(.snapshots[]; type == "object")' "$list" >/dev/null 2>&1 \
+    || die "$list: not JSON with a \"snapshots\" array of objects"
+
+# Shared by the report and the exit status. RFC 3339 times may carry fractional
+# seconds (Go's time.Time does); they are dropped before parsing.
+prelude='
+def epoch: sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;
+.snapshots as $all
+| ($all | map(select(.readyToUse == true and (.createdAt // "") != "")
+               | . + {t: (.createdAt | epoch)}) | sort_by(.t)) as $ready
+| ($all | map(select(.readyToUse != true))) as $pending
+| ($ready | last) as $newest
+| (if $newest == null then null else $now - $newest.t end) as $age
+| (($newest != null) and ($age < $max)) as $fresh
+|
+'
+jq_args=(--argjson now "$now" --argjson max "$max_age")
+
+report=$(jq -r "${jq_args[@]}" "$prelude"'
+  "Knight: \(.knight // "-")  namespace: \(.namespace // "-")",
+  (if $newest == null then "Newest ready snapshot: none"
+   else "Newest ready snapshot: \($newest.name)  created \($newest.createdAt)  age \($age)s" end),
+  "Fresh (ready and younger than \($max)s): \(if $fresh then "yes" else "no" end)",
+  "Pending snapshots: \($pending | length)",
+  ($pending[] | "  \(.name)  created \(.createdAt // "-")"),
+  (if .condition == null then "Condition: none"
+   else "Condition: \(.condition.status // "-") \(.condition.reason // "-")"
+        + (if (.condition.message // "") == "" then "" else ": \(.condition.message)" end) end)
+' "$list") || die "$list: bad createdAt in a ready snapshot"
+printf '%s\n' "$report"
+
+if jq -e "${jq_args[@]}" "$prelude"' $fresh' "$list" >/dev/null; then
+    exit 0
+fi
+exit 1
