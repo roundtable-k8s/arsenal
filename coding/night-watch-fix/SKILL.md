@@ -15,7 +15,7 @@ Read your repo's codebase skill first: `coding/roundtable-operator`,
 
 ## Per-repo procedure
 
-| Repo | Verify before push |
+| Repo | Full suite (run once, before marking ready) |
 |---|---|
 | roundtable-k8s/knights | from the repo root: `npm ci && npm run build && npm run typecheck && npm test && npm run lint` (one package: `npm test --workspace packages/pi-knight`) |
 | roundtable-k8s/roundtable-ui | `cd api && go build ./... && go vet ./... && go test ./...`; UI changes: `cd ui && npm install && npm run build` |

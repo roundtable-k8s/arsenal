@@ -16,7 +16,7 @@ _Last checked against roundtable-k8s/knights @ `f780966`. The old standalone `ro
 | pi SDKs | `@earendil-works/pi-agent-core`, `pi-ai`, `pi-coding-agent` (pi-knight) |
 | NATS | `@nats-io/*` v3 (jetstream, kv, services, transport-node), in core |
 | Tests | `tsx --test` per package (`tests/` dir) |
-| CI | `.github/workflows/ci.yml` (lint, typecheck and test jobs for core, pi-knight and claude-knight); image builds in `pi-knight.yml` and `claude-knight.yml` |
+| CI | `.github/workflows/ci.yml` (jobs `lint`, `core` (also runs the root typecheck), `pi-knight` and `claude-knight`); image builds in `pi-knight.yml` and `claude-knight.yml` |
 | Image | `ghcr.io/roundtable-k8s/pi-knight:<sha>` (Dockerfile in `packages/pi-knight/`) and `ghcr.io/roundtable-k8s/claude-knight:<sha>` (both also `:latest`, pushed on main by their workflow) |
 
 ## Project Layout
