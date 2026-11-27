@@ -63,7 +63,7 @@ Tests live beside the code as `*_test.go`; check `Makefile` (`make help`) for ta
 1. **Never edit auto-generated files**: `config/crd/bases/*.yaml`, `config/rbac/role.yaml`, `**/zz_generated.*.go`
 2. **Never remove scaffold markers**: `// +kubebuilder:scaffold:*` comments
 3. **After editing `*_types.go`**: Run `make manifests generate`
-4. **After editing `*.go`**: Run `make test`
+4. **After editing `*.go`**: Run the narrowest test for what you touched (`go test ./path/... -run <name>`); `make test` runs once, at the end
 5. **Always `CGO_ENABLED=0`** for builds (no gcc in runtime image)
 6. **Kubebuilder CRD defaults are applied at API server admission** — controller-side env vars can't override them
 
@@ -78,6 +78,13 @@ make build                # manager + gateway binaries
 ```
 
 `go.mod` pins `toolchain`, so do not set `GOTOOLCHAIN` by hand. Do not run `make docker-*`, `tilt-up` or the e2e targets in a knight pod (no Docker daemon, no kind cluster); leave them to CI.
+
+## Finish inside the turn
+
+- After the first commit that builds, push the branch (`git push -u origin <branch>`) and open the PR as a draft (`gh pr create --draft`). Keep pushing after each later commit. A task that runs out of time must leave its work on the remote.
+- While iterating, run the narrowest test (one package, one file, `-run <name>`). Run the full suite once, at the end, and read its output instead of re-running it.
+- Never end a turn while a command you started in the background is still running: wait for it to finish (or stop it), then push. A final message such as "tests are running in the background" loses the work.
+- If the time limit in the task prompt (when there is one) is nearly used up, stop testing, push what builds, and say in the final message what is untested.
 
 ## If a test fails only in the pod
 

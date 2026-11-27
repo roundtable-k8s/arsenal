@@ -45,7 +45,14 @@ npm run lint
 npm test --workspace packages/pi-knight   # one package
 ```
 
-Run typecheck, test and lint before pushing.
+Build and typecheck before the first push; run the narrowest test while iterating, and the full test and lint suite once, before marking the PR ready.
+
+## Finish inside the turn
+
+- After the first commit that builds, push the branch (`git push -u origin <branch>`) and open the PR as a draft (`gh pr create --draft`). Keep pushing after each later commit. A task that runs out of time must leave its work on the remote.
+- While iterating, run the narrowest test (one package, one file, `-run <name>`). Run the full suite once, at the end, and read its output instead of re-running it.
+- Never end a turn while a command you started in the background is still running: wait for it to finish (or stop it), then push. A final message such as "tests are running in the background" loses the work.
+- If the time limit in the task prompt (when there is one) is nearly used up, stop testing, push what builds, and say in the final message what is untested.
 
 ## If a test fails only in the pod
 

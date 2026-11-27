@@ -23,6 +23,13 @@ Read your repo's codebase skill first: `coding/roundtable-operator`,
 | roundtable-k8s/arsenal | skills are markdown: valid YAML frontmatter (`name`, `description`), check referenced paths/commands actually exist |
 | the deployment's GitOps repo (named in the Mission briefing) | **Round Table app paths ONLY** (e.g. `kubernetes/apps/roundtable/**`) — never touch anything else. Update the matching `kustomization.yaml` for new files. |
 
+## Finish inside the turn
+
+- After the first commit that builds, push the branch (`git push -u origin <branch>`) and open the PR as a draft (`gh pr create --draft`). Keep pushing after each later commit. A task that runs out of time must leave its work on the remote.
+- While iterating, run the narrowest test (one package, one file, `-run <name>`). Run the full suite once, at the end, and read its output instead of re-running it.
+- Never end a turn while a command you started in the background is still running: wait for it to finish (or stop it), then push. A final message such as "tests are running in the background" loses the work.
+- If the time limit in the task prompt (when there is one) is nearly used up, stop testing, push what builds, and say in the final message what is untested.
+
 ## If a test fails only in the pod
 
 The pod sets variables that a developer machine and CI do not (`KNIGHT_NAME`, `NATS_*`, `ROUNDTABLE_TABLE`, `KNIGHT_MODEL`, `KNIGHT_DATA_DIR`, `MAX_CONCURRENT_TASKS`). Before changing any code, run the repo's test command from the table above again with a clean environment, keeping only what the toolchain needs, for example `env -i PATH="$PATH" HOME="$HOME" go test ./...` or `env -i PATH="$PATH" HOME="$HOME" npm test --workspace packages/<pkg>`.
