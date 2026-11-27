@@ -8,7 +8,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 cmp="$here/../scripts/compare-outputs"
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+trap 'chmod -R u+rwx "$tmp" 2>/dev/null; rm -rf "$tmp"' EXIT
 old="$tmp/old"; new="$tmp/new"
 mkdir -p "$old" "$new"
 
@@ -82,11 +82,13 @@ bash "$cmp" "$old" "$new" --diff 2026-11-17 > "$tmp/d2"
 rm -f "$old/2026-11-17.md" "$new/2026-11-17.md"
 
 # Read-only: directory contents, sizes and mtimes unchanged by the script's runs
+chmod -R a-w "$old" "$new"
 before=$(snapshot)
 bash "$cmp" "$old" "$new" --today 2026-11-26 --days 7 >/dev/null 2>&1
 bash "$cmp" "$old" "$new" --today 2026-11-26 --days 7 --pattern '*.json' >/dev/null 2>&1
 bash "$cmp" "$old" "$new" --diff 2026-11-26 >/dev/null 2>&1
 after=$(snapshot)
+chmod -R u+w "$old" "$new"
 [ "$before" = "$after" ]; check "script never writes into either directory" $?
 
 # Bad arguments and unreadable directories exit 2
@@ -97,6 +99,10 @@ bash "$cmp" "$old" "$new" --days abc >/dev/null 2>&1; [ $? -eq 2 ]; check "--day
 bash "$cmp" "$old" "$new" --today 2026-02-30 >/dev/null 2>&1; [ $? -eq 2 ]; check "impossible --today exits 2" $?
 bash "$cmp" "$old" "$tmp/missing" >/dev/null 2>&1; [ $? -eq 2 ]; check "unreadable new directory exits 2" $?
 bash "$cmp" "$tmp/missing" "$new" >/dev/null 2>&1; [ $? -eq 2 ]; check "unreadable old directory exits 2" $?
+mkdir "$tmp/noexec"; chmod a-x "$tmp/noexec"
+bash "$cmp" "$old" "$tmp/noexec" >/dev/null 2>&1; [ $? -eq 2 ]; check "dir without x exits 2 (new)" $?
+bash "$cmp" "$tmp/noexec" "$new" >/dev/null 2>&1; [ $? -eq 2 ]; check "dir without x exits 2 (old)" $?
+chmod u+x "$tmp/noexec"
 bash "$cmp" "$old" "$new" --bogus >/dev/null 2>&1; [ $? -eq 2 ]; check "unknown option exits 2" $?
 bash "$cmp" "$old" "$new" --diff 2026-01-01 >/dev/null 2>&1; [ $? -eq 2 ]; check "--diff with no file on either side exits 2" $?
 bash "$cmp" "$old" "$new" --diff notadate >/dev/null 2>&1; [ $? -eq 2 ]; check "--diff with a bad date exits 2" $?
