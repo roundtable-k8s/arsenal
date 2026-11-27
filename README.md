@@ -68,9 +68,10 @@ runtime (pi-knight / claude-knight) → discovers skills from /skills
 - **`spec.arsenals`** — the single ordered list of arsenals. Each entry has `name`,
   `repo`, `ref`, `periodSeconds` (integer seconds, not `300s`) and `image`, or an
   `oci` source instead of a git repo. An empty entry (`{name: platform}`) uses the
-  defaults: `https://github.com/roundtable-k8s/arsenal`, `ref: main`. `name` sets
-  the sync path `/arsenal/<name>` and sidecar `git-sync-<name>`; it defaults to the
-  repo basename. Extra arsenals go after the platform entry; the list order is the
+  defaults: `https://github.com/roundtable-k8s/arsenal`, `ref: main`. Omitting
+  `spec.arsenals`, or giving an empty list, also gives the platform arsenal only.
+  `name` sets the sync path `/arsenal/<name>` and sidecar `git-sync-<name>`; it
+  defaults to the repo basename. Extra arsenals go after the platform entry; the list order is the
   merge order.
 - **Per-skill merge** — for every category in `spec.skills`, `/skills/<category>/<skill>`
   links to the **last** arsenal that provides `<category>/<skill>`, so later
