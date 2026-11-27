@@ -35,7 +35,12 @@ jq -r '
   . as $r
   | ($r.done == true) as $done
   | [$r.steps[]? | select((.error // "") != "")] as $failed
-  | (if ($done | not) then "running" elif ($failed | length) > 0 then "failed" else "succeeded" end) as $status
+  | (($r.phase // "") | ascii_downcase) as $phase
+  | (if ($done | not) then "running"
+     elif $phase == "failed" then "failed"
+     elif $phase == "partiallysucceeded" then "partially succeeded"
+     elif ($failed | length) > 0 then (if $phase == "succeeded" then "partially succeeded" else "failed" end)
+     else "succeeded" end) as $status
   | (try (($r.completedAt | secs) - ($r.startedAt | secs)) catch null) as $d
   | (if ($done | not) then "still running"
      elif $d == null or $d < 0 then "unknown"
@@ -66,7 +71,7 @@ jq -r '
       ""
     ]
   + (if ($failed | length) > 0
-     then ["## Errors", ""] + [$failed[] | "- **\(.name // "-" | esc)**: \(.error)"] + [""]
+     then ["## Errors", ""] + [$failed[] | "- **\(.name // "-" | esc)**: \(.error | tostring | gsub("\n"; "\n  "))"] + [""]
      else [] end)
   + ["## Output", ""]
   + (if $len == 0 then ["_No final output._"]
