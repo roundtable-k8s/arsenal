@@ -32,6 +32,10 @@ run bash "$S" --runs "$work/ns.json"
 has "  fleet/run-n1  c  Running  running 9000s"; check "namespace/run on active line" $?
 has "  fleet/run-n1  c  running 9000s"; check "namespace/run on stuck line" $?
 
+echo '{"runs":[{"run":"run-p1","namespace":"fleet","chain":"pickup-fix","phase":"Succeeded","source":"pickup","ageSeconds":10,"issue":{"repo":"roundtable-k8s/arsenal","number":9}}]}' > "$work/nsp.json"
+run bash "$S" --runs "$work/nsp.json"
+has "  roundtable-k8s/arsenal#9  runs 1  latest fleet/run-p1"; check "namespace/run on pickup latest line" $?
+
 run bash "$S" --runs "$work/r.json"
 check "exit 0" "$([ "$rc" -eq 0 ]; echo $?)"
 has "Runs: 6  active: 3"; check "total and active counts" $?
