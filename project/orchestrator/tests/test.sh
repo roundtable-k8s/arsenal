@@ -248,6 +248,22 @@ run "$status" --config "$skill/config.example.json"
 q '.cluster.operator == {podName:"rt-operator-abc",startedAt:"2026-01-03T08:00:00Z",restarts:2}'
 check "operator crash-looping: startedAt falls back to the pod start time" $?
 
+# ---- operator pod Pending: no containerStatuses yet ----
+fixtures
+echo '{"items":[{"metadata":{"name":"rt-operator-pending","creationTimestamp":"2026-01-05T00:00:00Z","labels":{"app.kubernetes.io/name":"roundtable-operator"}},"status":{"phase":"Pending","startTime":"2026-01-05T00:00:03Z"}}]}' > "$FIX/k8s/pods.json"
+run "$status" --config "$skill/config.example.json"
+[ $rc -eq 0 ] && valid; check "operator Pending with startTime: exits 0 and validates" $?
+q '.cluster.operator == {podName:"rt-operator-pending",startedAt:"2026-01-05T00:00:03Z",restarts:0}'
+check "operator Pending without containerStatuses: startedAt equals status.startTime" $?
+
+# ---- operator pod Pending: neither startTime nor containerStatuses ----
+fixtures
+echo '{"items":[{"metadata":{"name":"rt-operator-new","creationTimestamp":"2026-01-06T00:00:00Z","labels":{"app.kubernetes.io/name":"roundtable-operator"}},"status":{"phase":"Pending"}}]}' > "$FIX/k8s/pods.json"
+run "$status" --config "$skill/config.example.json"
+[ $rc -eq 0 ] && valid; check "operator Pending with no startTime: exits 0 and validates" $?
+q '.cluster.operator == {podName:"rt-operator-new",startedAt:"2026-01-06T00:00:00Z",restarts:0}'
+check "operator Pending without startTime or containerStatuses: startedAt falls back to creationTimestamp" $?
+
 # ---- snapshot without the new fields ----
 fixtures; run "$status" --config "$skill/config.example.json"
 jq 'del(.cluster.operator) | .cluster.chains.Running |= map(del(.runningSteps))' <<<"$out" > "$work/old.json"

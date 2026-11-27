@@ -27,9 +27,13 @@ check "procedure: status, tend, dispatch, feed, decide, log" \
 check "feed threshold (about eight)" grep -q 'fewer than about eight' "$skill"
 check "feed writes two to four issues" grep -q 'two to four' "$skill"
 check "feed links the issue format" grep -q 'reference/issue-format.md' "$skill"
-check "decide comment format" grep -q 'Decided <YYYY-MM-DD> (orchestrator)' "$skill"
-check "decide leaves taste to the owner" grep -q 'product-direction and taste questions' "$skill"
-check "decide names the decision register path" grep -q 'docs/decisions.md' "$skill"
+
+# Step 5 (Decide) on its own: the decision rules must sit inside that section.
+step5="$(awk '/^### 5\. /{f=1; next} /^### /{f=0} f' "$skill")"
+check "step 5 section is not empty" test -n "$step5"
+check "decide comment format (step 5)" grep -q 'Decided <YYYY-MM-DD> (orchestrator)' <<<"$step5"
+check "decide leaves taste to the owner (step 5)" grep -q 'product-direction and taste questions' <<<"$step5"
+check "decide names the decision register path (step 5)" grep -q 'docs/decisions.md' <<<"$step5"
 check "one-off section links the review procedure" grep -q 'reference/review-owner-questions.md' "$skill"
 check "log is 3-8 lines" grep -q '3–8 plain lines' "$skill"
 
@@ -41,7 +45,7 @@ check "review uses the step 5 comment format" grep -q 'Decided <YYYY-MM-DD> (orc
 for n in 1 2 3 4 5 6; do
   check "review has point $n" grep -qE "^$n\. \*\*" "$review"
 done
-check "review never decides product-direction or taste" grep -q 'Never decide' "$review"
+check "review never decides product-direction or taste" grep -qE '^5\. \*\*Never decide\*\*' "$review"
 for s in status tend dispatch alert; do
   check "names scripts/$s" grep -q "\$S/$s" "$skill"
 done
@@ -71,7 +75,8 @@ check "issue format starts with Part of #<epic>" grep -q '^Part of #<epic>' "$fm
 check "conventional titles" grep -q 'feat(scope)' "$fmt"
 
 # Nothing environment-specific: no workstation paths, cluster or personal names.
-for f in "$skill" "$fmt" "$review"; do
+groom="$here/reference/groom.md"
+for f in "$skill" "$fmt" "$review" "$groom"; do
   check "no workstation paths in ${f#$here/}" bash -c '! grep -qE "(/home/|/Users/|~/)" "$1"' _ "$f"
   check "no cluster or person names in ${f#$here/}" bash -c '! grep -qiE "dapper|derek|merlin|nats-box" "$1"' _ "$f"
 done
@@ -86,13 +91,11 @@ check "one-off tasks heading appears once" bash -c '[ "$(grep -cx "## One-off ta
 check "groom names issue-format.md" grep -q 'issue-format.md' "$groom"
 check "groom adds the groomed label" grep -q '`groomed`' "$groom"
 check "groom adds rt:ready only when the task says so" \
-  grep -q 'Add `rt:ready` only when' "$groom"
+  grep -qF 'Add `rt:ready` only when' "$groom"
+check "groom names rt:ready in that one sentence and nowhere else" \
+  bash -c 'n=$(grep -ci "rt:ready" "$1"); m=$(grep -cF "Add \`rt:ready\` only when" "$1"); [ "$n" = 1 ] && [ "$m" = 1 ]' _ "$groom"
 check "groom has the report fields" \
   bash -c 'grep -q "tracker rows already fixed:" "$1" && grep -q "needs the owner:" "$1"' _ "$groom"
-for f in "$groom"; do
-  check "no workstation paths in ${f#$here/}" bash -c '! grep -qE "(/home/|/Users/|~/)" "$1"' _ "$f"
-  check "no cluster or person names in ${f#$here/}" bash -c '! grep -qiE "dapper|derek|merlin|nats-box" "$1"' _ "$f"
-done
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
