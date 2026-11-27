@@ -197,7 +197,7 @@ format_table() {
     echo -e "${CYAN}MODIFIED             PATH                                               SIZE    TITLE${NC}"
     echo "--------------------------------------------------------------------------------------------------------"
     
-    while IFS='|' read -r note_id path filename title modified size_bytes word_count; do
+    while IFS=$'\x1f' read -r note_id path filename title modified size_bytes word_count; do
         # Format modified datetime
         local mod_display
         mod_display=$(echo "$modified" | cut -d'T' -f1,2 | tr 'T' ' ' || echo "$modified")
@@ -227,7 +227,7 @@ format_json() {
     echo "["
     local first=1
     
-    while IFS='|' read -r note_id path filename title modified size_bytes word_count; do
+    while IFS=$'\x1f' read -r note_id path filename title modified size_bytes word_count; do
         # Get tags for this note
         local tags_json
         tags_json=$(sql_value "SELECT json_group_array(tag) FROM tags WHERE note_id = $note_id") || exit 1
@@ -258,7 +258,7 @@ JSON
 format_csv() {
     echo "modified,path,filename,title,size_bytes,word_count"
     
-    while IFS='|' read -r note_id path filename title modified size_bytes word_count; do
+    while IFS=$'\x1f' read -r note_id path filename title modified size_bytes word_count; do
         # Escape quotes in fields
         path="${path//\"/\"\"}"
         filename="${filename//\"/\"\"}"
@@ -270,7 +270,7 @@ format_csv() {
 
 # Format output as paths only
 format_paths() {
-    while IFS='|' read -r note_id path _; do
+    while IFS=$'\x1f' read -r note_id path _; do
         echo "$path"
     done
 }
@@ -283,7 +283,7 @@ execute_query() {
     local results
     local errfile rc=0
     errfile=$(mktemp)
-    results=$(sqlite3 -separator '|' "$DB_PATH" "$query" 2>"$errfile") || rc=$?
+    results=$(sqlite3 -separator $'\x1f' "$DB_PATH" "$query" 2>"$errfile") || rc=$?
     if [[ $rc -ne 0 ]]; then
         echo -e "${RED}Error: query failed: $(cat "$errfile")${NC}" >&2
         rm -f "$errfile"
