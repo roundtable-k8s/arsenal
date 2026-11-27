@@ -274,7 +274,7 @@ format_table() {
     echo -e "${CYAN}$header${NC}"
     echo "----------------------------------------"
     
-    while IFS='|' read -r path filename title created modified type size_bytes word_count note_id; do
+    while IFS=$'\x1f' read -r path filename title created modified type size_bytes word_count note_id; do
         # Get tags for this note
         local tags
         tags=$(sql_value "SELECT GROUP_CONCAT(tag, ', ') FROM tags WHERE note_id = $note_id") || exit 1
@@ -310,7 +310,7 @@ format_json() {
     echo "["
     local first=1
     
-    while IFS='|' read -r path filename title created modified type size_bytes word_count note_id; do
+    while IFS=$'\x1f' read -r path filename title created modified type size_bytes word_count note_id; do
         # Get tags for this note
         local tags_json
         tags_json=$(sql_value "SELECT json_group_array(tag) FROM tags WHERE note_id = $note_id") || exit 1
@@ -343,7 +343,7 @@ JSON
 format_csv() {
     echo "path,filename,title,created,modified,type,size_bytes,word_count,tags"
     
-    while IFS='|' read -r path filename title created modified type size_bytes word_count note_id; do
+    while IFS=$'\x1f' read -r path filename title created modified type size_bytes word_count note_id; do
         # Get tags for this note
         local tags
         tags=$(sql_value "SELECT GROUP_CONCAT(tag, ';') FROM tags WHERE note_id = $note_id") || exit 1
@@ -360,7 +360,7 @@ format_csv() {
 
 # Format output as paths only
 format_paths() {
-    while IFS='|' read -r path _; do
+    while IFS=$'\x1f' read -r path _; do
         echo "$path"
     done
 }
@@ -373,7 +373,7 @@ execute_query() {
     local results
     local errfile rc=0
     errfile=$(mktemp)
-    results=$(sqlite3 -separator '|' "$DB_PATH" "$query" 2>"$errfile") || rc=$?
+    results=$(sqlite3 -separator $'\x1f' "$DB_PATH" "$query" 2>"$errfile") || rc=$?
     if [[ $rc -ne 0 ]]; then
         echo -e "${RED}Error: query failed: $(cat "$errfile")${NC}" >&2
         rm -f "$errfile"

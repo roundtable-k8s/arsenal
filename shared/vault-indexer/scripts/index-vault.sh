@@ -333,6 +333,9 @@ SQL
         if ! echo "$tags_json" | python3 -c "
 import json, sys
 tags = json.load(sys.stdin)
+# a scalar tags value (tags: security) is one tag, not a list
+if isinstance(tags, str):
+    tags = [tags]
 if isinstance(tags, list):
     for tag in tags:
         tag_clean = str(tag).replace(\"'\", \"''\")

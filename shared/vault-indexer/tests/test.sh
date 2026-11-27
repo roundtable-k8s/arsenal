@@ -46,6 +46,24 @@ created: 2026-03-15
 # Person
 N
 printf '# no frontmatter\n' > "$vault/Notes/plain.md"
+# a title containing the pipe character, and a scalar (non-list) tags value
+cat > "$vault/Notes/pipe-title.md" <<'N'
+---
+type: note
+tags: [piped-tag]
+created: 2026-03-22
+---
+# a | b
+N
+cat > "$vault/Notes/scalar-tag.md" <<'N'
+---
+title: Scalar tag note
+type: note
+tags: scalar-tag
+created: 2026-03-23
+---
+# Scalar
+N
 # a body after the frontmatter, including a line that is not valid YAML
 cat > "$vault/Notes/body-note.md" <<'N'
 ---
@@ -161,6 +179,27 @@ check "table output shows the body note with its tags" $([[ $rc -eq 0 && "$out" 
 
 out=$(q --tag kube-body --format csv 2>&1); rc=$?
 check "csv output carries the body note's tags" $([[ $rc -eq 0 && "$out" == *'body-note.md'* && "$out" == *indexer-body* && "$out" == *kube-body* ]]; echo $?)
+
+out=$(q --tag scalar-tag --format paths 2>&1); rc=$?
+check "scalar tags value is indexed as one tag" $([[ $rc -eq 0 && "$out" == *scalar-tag.md* ]]; echo $?)
+
+out=$(q --tag piped-tag --format table 2>&1); rc=$?
+check "table output keeps a title with a pipe in its column" $([[ $rc -eq 0 && "$out" == *pipe-title.md* && "$out" == *piped-tag* ]]; echo $?)
+
+out=$(q --tag piped-tag --format json 2>&1); rc=$?
+check "json output keeps a title with a pipe" $([[ $rc -eq 0 && "$out" == *'"title": "a | b"'* && "$out" == *'"piped-tag"'* ]]; echo $?)
+
+out=$(q --tag piped-tag --format csv 2>&1); rc=$?
+check "csv output keeps a title with a pipe" $([[ $rc -eq 0 && "$out" == *'"a | b"'* && "$out" == *piped-tag* ]]; echo $?)
+
+out=$(q --tag piped-tag --format paths 2>&1); rc=$?
+check "paths output prints the path of a pipe-title note" $([[ $rc -eq 0 && "$out" == *pipe-title.md* ]]; echo $?)
+
+out=$(r --tag piped-tag --format table 2>&1); rc=$?
+check "recent table keeps a title with a pipe" $([[ $rc -eq 0 && "$out" == *"a | b"* ]]; echo $?)
+
+out=$(r --tag piped-tag --format json 2>&1); rc=$?
+check "recent json keeps a title with a pipe" $([[ $rc -eq 0 && "$out" == *'"a | b"'* ]]; echo $?)
 
 out=$(q --path "a_b" --format paths 2>&1); rc=$?
 check "--path '_' matches only a literal underscore" $([[ $rc -eq 0 && "$out" == *"a_b.md"* && "$out" != *"aXb.md"* ]]; echo $?)
