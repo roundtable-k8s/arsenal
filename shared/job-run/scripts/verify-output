@@ -5,7 +5,8 @@
 # --newer-than-minutes is given, modified within the last M minutes.
 # Success: last stdout line "verify-output: ok <n> file(s)", exit 0.
 # Failure: each problem on stderr, and as the last stdout line
-#   "Outcome: failed output missing or empty: <first problem>", exit 1.
+#   "Outcome: failed output missing or empty: <first problem>", exit 1; when the
+#   only problems are stale, "Outcome: failed output not usable: <first problem>".
 # Exit 2 on bad arguments.
 set -euo pipefail
 
@@ -31,9 +32,11 @@ if [ -n "$maxage" ] && ! [[ "$maxage" =~ ^[0-9]+$ ]]; then usage; fi
 
 now="$(date +%s)"
 problems=()
+hard=0  # set when a problem other than staleness is found
 for p in "${paths[@]}"; do
   if [ ! -f "$p" ]; then
     problems+=("missing $p")
+    hard=1
     continue
   fi
   size="$(stat -L -c %s "$p")"
@@ -43,6 +46,7 @@ for p in "${paths[@]}"; do
     else
       problems+=("too small $p ($size < $min bytes)")
     fi
+    hard=1
     continue
   fi
   if [ -n "$maxage" ]; then
@@ -58,7 +62,12 @@ if [ ${#problems[@]} -gt 0 ]; then
   for prob in "${problems[@]}"; do
     echo "verify-output: $prob" >&2
   done
-  echo "Outcome: failed output missing or empty: ${problems[0]}"
+  if [ "$hard" -eq 1 ]; then
+    echo "Outcome: failed output missing or empty: ${problems[0]}"
+  else
+    # Stale-only: the output exists and is non-empty, so do not call it missing.
+    echo "Outcome: failed output not usable: ${problems[0]}"
+  fi
   exit 1
 fi
 echo "verify-output: ok ${#paths[@]} file(s)"

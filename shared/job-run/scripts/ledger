@@ -55,6 +55,11 @@ append() {
   fi
   if [ -n "$items" ]; then items_json="$items"; else items_json="null"; fi
 
+  # Serialise read-modify-write so concurrent appends do not lose entries.
+  # The lock is held on fd 9 until the script exits.
+  exec 9>"$file.lock"
+  flock 9
+
   old="$(read_ledger "$file")"
   entry="$(jq -nc --arg job "$job" --arg date "$date" --arg status "$status" \
     --arg note "$note" --argjson items "$items_json" \
@@ -67,6 +72,8 @@ append() {
     echo "ledger: could not write $tmp" >&2
     exit 1
   fi
+  # mktemp creates 0600; keep the existing ledger's mode so other readers keep access.
+  if [ -e "$file" ]; then chmod --reference="$file" "$tmp"; fi
   mv -f "$tmp" "$file"
   echo "ledger: ok $file $job $status $date"
 }

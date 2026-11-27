@@ -27,7 +27,9 @@ S=/skills/shared/job-run/scripts
   `--newer-than-minutes` is given, modified within that many minutes.
 - Success: exit 0, last line `verify-output: ok N file(s)`.
 - Failure: exit 1, problems on stderr, and the last stdout line is
-  `Outcome: failed output missing or empty: <first problem>`.
+  `Outcome: failed output missing or empty: <first problem>`, or
+  `Outcome: failed output not usable: <first problem>` when the only problem is
+  staleness (`--newer-than-minutes`).
 - Exit 2 means bad arguments.
 
 **If `verify-output` prints `Outcome: failed`, make that your final line.** Do not
