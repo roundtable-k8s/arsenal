@@ -18,7 +18,7 @@ time you produce a daily report or briefing summary.
 
 ## What this knight can and cannot do
 
-- The vault is mounted read-only unless the Knight lists the sub-path in `spec.vault.writablePaths` (no default: an absent or empty list means no writable paths); entries are relative to the vault root, and the trailing slash is the convention, not required (e.g. `Agents/Briefings/`, mounted at `/vault/Agents/Briefings`), never absolute `/vault/...` paths, and a write anywhere else fails with `Read-only file system`.
+- The vault is mounted read-only unless the Knight lists the sub-path in `spec.vault.writablePaths` (no default: an absent or empty list means no writable paths); entries are relative to the vault root (e.g. `Agents/Briefings/`, mounted at `/vault/Agents/Briefings`; the trailing slash is the convention, not required), never absolute `/vault/...` paths, and a write anywhere else fails with `Read-only file system`.
 - The ledger lives under `$BRIEFINGS_DIR/Ledger` (default `/vault/Agents/Briefings/Ledger`), so `Agents/Briefings/` must be in `writablePaths` for it to be updated. If you set `RT_BRIEFINGS_DIR` to another path under `/vault`, list that path relative to the vault root (drop the `/vault/` prefix) instead.
 - `/data` is the knight's own persistent volume and is always writable.
 - If it fails, stop and report in the task result which entry is missing; do not work around it (no Docker Hub pulls, no installing packages from the open internet, no writing to another path).
