@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Turn a list_runs reply into one short run-list report: counts by source and phase,
+# the active runs with how long they have been running, the active runs over the
+# stuck threshold, and the pickup runs grouped by issue.
+#
+# Usage:
+#   report --runs FILE [--stuck-after SECONDS]
+#
+# Input: list_runs -> {"runs":[...]}. A run is "active" when runningSeconds is set.
+# Reads files only; jq is the only tool needed.
+# Exit: 0 report printed; 2 bad arguments, unreadable file or bad JSON.
+set -euo pipefail
+export LC_ALL=C
+
+die() { echo "report: $*" >&2; exit 2; }
+usage() { echo "usage: report --runs FILE [--stuck-after SECONDS]" >&2; }
+
+runs=""; stuck=7200
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --runs)        [ $# -ge 2 ] || { usage; die "--runs needs a value"; }; runs=$2; shift 2 ;;
+        --stuck-after) [ $# -ge 2 ] || { usage; die "--stuck-after needs a value"; }; stuck=$2; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) usage; die "unknown option or argument: $1" ;;
+    esac
+done
+[ -n "$runs" ] || { usage; die "--runs is required"; }
+case "$stuck" in
+    ''|*[!0-9]*) die "--stuck-after must be a whole number of seconds" ;;
+esac
+
+[ -r "$runs" ] || die "cannot read $runs"
+jq -e 'type == "object" and (.runs | type == "array")' "$runs" >/dev/null 2>&1 \
+    || die "$runs: not JSON with a \"runs\" array"
+
+jq -r --argjson stuck "$stuck" '
+  .runs as $r
+  | ($r | map(select(.runningSeconds != null))) as $active
+  | "Runs: \($r | length)  active: \($active | length)",
+    "  by source: " + ($r | group_by(.source // "unknown") | map("\(.[0].source // "unknown")=\(length)") | if length == 0 then "-" else join("  ") end),
+    "  by phase: " + ($r | group_by(.phase // "unknown") | map("\(.[0].phase // "unknown")=\(length)") | if length == 0 then "-" else join("  ") end),
+    ( if ($active | length) == 0 then "No active runs"
+      else "Active runs:",
+           ($active | sort_by(-.runningSeconds) | .[] | "  \(.run // "-")  \(.chain // "-")  \(.phase // "-")  running \(.runningSeconds | round)s") end ),
+    ( [$active[] | select(.runningSeconds > $stuck)] as $long
+      | if ($long | length) == 0 then "No active runs over \($stuck)s"
+        else "Active over \($stuck)s: \($long | length)",
+             ($long[] | "  \(.run // "-")  \(.chain // "-")  running \(.runningSeconds | round)s") end ),
+    ( [$r[] | select(.issue != null)] as $pk
+      | if ($pk | length) == 0 then "No pickup runs"
+        else "Pickup runs by issue:",
+             ($pk | group_by("\(.issue.repo)#\(.issue.number)")
+               | sort_by(-length) | .[]
+               | "  \(.[0].issue.repo)#\(.[0].issue.number)  runs \(length)  latest \(.[0].run // "-")") end )
+' "$runs"
