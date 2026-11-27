@@ -58,6 +58,8 @@ Templates are co-located with the skill that uses them under `assets/`. To rende
 - Lists and objects are not scalars. A placeholder that points at one is unresolved.
 - `{{#each}}` needs a list. Nested `{{#each}}` blocks are not supported. They are
   reported as unresolved, not rendered.
+- Any other `{{...}}` tag, such as `{{#if}}`, `{{#unless}}`, `{{ x }}` with spaces or
+  `{{@last}}`, is reported as unresolved and fails `--strict`.
 
 ## Unresolved Placeholders
 
