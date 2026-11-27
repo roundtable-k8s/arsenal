@@ -11,6 +11,11 @@ on:
   merge_group:
     types: [checks_requested]
 
+# Only pull_request runs are cancelled by a newer push; push to main and merge queue runs always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate:
     runs-on: ubuntu-latest
