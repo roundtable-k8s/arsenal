@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Check that a hand-off brief has the six headings, each with a non-empty body,
+# and is under 32 KiB. Exit 0 = ok, 1 = incomplete, 2 = usage or read error.
+# Usage: check-brief [FILE|-]      (no argument or "-" reads the brief from stdin)
+#   stderr lists what is missing; the last stdout line is "check-brief: ok" or
+#   "check-brief: incomplete".
+set -euo pipefail
+
+HEADINGS=("Goal" "Context" "Inputs" "Constraints" "Output wanted" "Done when")
+LIMIT=32768 # bytes; a brief must be strictly under 32 KiB
+
+src="${1:--}"
+tmp=""
+if [ "$src" = "-" ]; then
+  tmp="$(mktemp)"
+  trap 'rm -f "$tmp"' EXIT
+  cat > "$tmp"
+  src="$tmp"
+elif [ ! -r "$src" ] || [ -d "$src" ]; then
+  echo "check-brief: cannot read $src" >&2
+  exit 2
+fi
+
+fail=0
+size="$(wc -c < "$src")"
+if [ "$size" -ge "$LIMIT" ]; then
+  echo "check-brief: too large: $size bytes (limit is under $LIMIT)" >&2
+  fail=1
+fi
+
+# One "name<TAB>nonblank" line per "## " heading: nonblank is 1 when the body has text.
+sections="$(awk '
+  /^## / {
+    if (name != "") print name "\t" nb
+    name = substr($0, 4); sub(/[ \t]+$/, "", name); nb = 0; next
+  }
+  name != "" && /[^[:space:]]/ { nb = 1 }
+  END { if (name != "") print name "\t" nb }
+' "$src")"
+
+declare -A body=()
+while IFS=$'\t' read -r name nb; do
+  [ -n "$name" ] && body["$name"]="$nb"
+done <<< "$sections"
+
+for h in "${HEADINGS[@]}"; do
+  if [ -z "${body[$h]+set}" ]; then
+    echo "check-brief: missing heading: $h" >&2
+    fail=1
+  elif [ "${body[$h]}" != 1 ]; then
+    echo "check-brief: empty body: $h" >&2
+    fail=1
+  fi
+done
+
+if [ "$fail" -eq 0 ]; then
+  echo "check-brief: ok"
+else
+  echo "check-brief: incomplete"
+  exit 1
+fi

@@ -26,6 +26,7 @@ arsenal/
 │   ├── briefing-synthesis/    # Merge knight outputs into one briefing
 │   ├── fleet-status/          # Fleet health summary
 │   ├── github-pm/             # Roadmap/issue management for the operator repo
+│   ├── handoff/               # Pass work to another knight with a brief checked before sending
 │   ├── orchestrator/          # Plan, dispatch and tend issue work
 │   ├── pr-postrun/            # Post-run PR housekeeping
 │   └── pr-review/             # PR review helpers
