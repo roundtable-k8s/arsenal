@@ -17,6 +17,7 @@ arsenal/
 │   ├── open-items-ledger/     # Carry-forward ledger protocol
 │   ├── report-generator/      # Template-based report rendering
 │   ├── run-report/            # Summarise a chain run record as markdown
+│   ├── schedules/             # Inspect and operate schedules, with a health report
 │   ├── side-by-side/          # Compare an old job's dated output with the new one
 │   ├── vault-indexer/         # Vault indexing helpers
 │   ├── web-browser/           # Headless browsing
