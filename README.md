@@ -10,6 +10,7 @@ All skills follow the open [Agent Skills](https://agentskills.io) standard.
 arsenal/
 ├── shared/                    # Base capabilities (ALL knights)
 │   ├── daily-reports/         # Daily briefing templates
+│   ├── dead-letter-triage/    # Dead letters sorted into retry, rerun, skip or inspect
 │   ├── evidence-verification/ # Source/evidence checking
 │   ├── job-run/               # Scheduled-job run ledger and output checks
 │   ├── open-items-ledger/     # Carry-forward ledger protocol
